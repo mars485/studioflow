@@ -1,0 +1,27 @@
+# Isolated disposable database; no host ports or production volumes.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: studioflow_test
+      POSTGRES_USER: studioflow_test
+      POSTGRES_PASSWORD: local_test_only
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studioflow_test -d studioflow_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://studioflow_test:local_test_only@db:5432/studioflow_test
+      TEST_DATABASE_URL: postgresql+asyncpg://studioflow_test:local_test_only@db:5432/studioflow_test
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c "alembic upgrade head && alembic check && python -m pytest -q"
+  frontend:
+    build: ./frontend
+    command: sh -c "npm run test && npm run build"

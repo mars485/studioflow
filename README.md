@@ -1,284 +1,169 @@
 # StudioFlow
 
-**StudioFlow** — CRM/ERP-система для веб-студий и небольших digital-команд. Она объединяет продажи, клиентов, проекты, задачи и финансы в одном рабочем пространстве.
+CRM/ERP для веб-студий: продажи, клиенты, проекты, задачи и финансы в одном рабочем пространстве.
 
-Основной бизнес-процесс:
+## Реализовано
 
-```text
-Новая заявка → Сделка → Follow-up → Продажа → Проект → Задачи → Оплата
-```
+CRM работает с FastAPI и PostgreSQL, без mock-сделок:
 
-## Возможности
+- список, создание, просмотр, редактирование и удаление сделок;
+- Kanban со стадиями из API, drag-and-drop с сохранением стадии;
+- выбор рабочего пространства и воронки, поиск по сделке/клиенту/контакту;
+- создание клиента или выбор существующего при создании сделки;
+- сумма с точностью до копеек, контактное лицо, источник, описание;
+- Follow-up: дата/время, действие, комментарий, изменение и удаление;
+- загрузка, пустые состояния, ошибки, повторная загрузка и блокировка повторного сохранения;
+- фильтр Follow-up на сегодня и выделение просроченных контактов;
+- проверка membership и связей workspace → клиент / воронка → стадия;
+- миграции, backend-тесты на PostgreSQL и frontend-тесты.
 
-В целевой версии StudioFlow будут доступны:
+Карточка и счётчики обновляются после успешного ответа API. При ошибке переноса сделка остаётся в исходной стадии, при ошибке формы введённые данные сохраняются. После перезагрузки CRM читает данные из базы.
 
-- CRM с несколькими воронками продаж;
-- Kanban-доска сделок;
-- карточки клиентов и контактных лиц;
-- планирование звонков, встреч и следующих действий;
-- история изменений по каждой сделке;
-- автоматическое создание проекта из успешной сделки;
-- этапы проектов, задачи и подзадачи;
-- учёт рабочего времени;
-- счета, платежи и расходы;
-- расчёт прибыли и маржинальности проектов;
-- Dashboard с ключевыми показателями студии.
+Dashboard, проекты, задачи, финансы и аналитика пока остаются демонстрационными экранами. История коммуникаций и задачи в карточке сделки ещё не реализованы; фиктивные записи из CRM убраны.
 
-## Текущая версия
+## Архитектура
 
-В версии `0.1` подготовлен запускаемый каркас backend:
+- Backend: Python 3.12, FastAPI, SQLAlchemy 2 AsyncSession, asyncpg, PostgreSQL 16, Alembic, Pydantic.
+- Frontend: React, TypeScript, Vite, Lucide, CSS; Vitest и Testing Library для тестов.
+- `backend/app/api/dependencies.py`: текущий пользователь и проверка доступа к workspace.
+- `backend/app/api/v1/crm.py`: REST API, scoped-запросы и проверка связей.
+- `backend/app/api/v1/schemas.py`: входные/выходные схемы и валидация.
+- `backend/app/models/entities.py`: модели; `backend/alembic/versions/`: миграции.
+- `frontend/src/api.ts`: типы, обработка HTTP-ошибок, загрузка всех страниц списка.
+- `frontend/src/CRM.tsx`: доска, формы и карточка; `App.tsx`: оболочка и Dashboard.
 
-- FastAPI-приложение;
-- асинхронное подключение к PostgreSQL;
-- SQLAlchemy 2;
-- Alembic и начальная миграция базы данных;
-- Docker Compose;
-- модели `User`, `Workspace`, `WorkspaceMember`, `Client`, `Pipeline`, `PipelineStage` и `Deal`;
-- изоляция данных организаций через `workspace_id`;
-- endpoint проверки состояния API;
-- базовый автоматический тест.
+Сделка ссылается на клиента, воронку и стадию через UUID. Составные внешние ключи в PostgreSQL дополнительно запрещают связи между разными workspace и стадию чужой воронки. Каждое чтение/изменение сделки ограничено `workspace_id`. Чужой или отсутствующий workspace/объект возвращает 404.
 
-## Технологии
+Follow-up хранится в сделке как одно текущее следующее действие (`follow_up_at`, `follow_up_action`, `follow_up_comment`), а не журнал активностей. Время — PostgreSQL `timestamptz`. API требует ISO 8601 с часовым поясом; браузер отправляет UTC и показывает время в часовом поясе устройства. Фильтр «сегодня» также использует пояс устройства. Денежные значения — `Numeric(14,2)` / Decimal; API возвращает их строками.
 
-### Backend
+### Локальная идентификация и workspace isolation
 
-- Python 3.12;
-- FastAPI;
-- SQLAlchemy 2;
-- Alembic;
-- Pydantic Settings;
-- PostgreSQL 16;
-- Uvicorn.
+JWT пока не реализован. По умолчанию `DEV_AUTH_ENABLED=false`: CRM API отвечает 401. Для локальной разработки `.env.example` явно включает dev-режим: все запросы выполняются от `DEV_USER_ID`, заданного сервером. Передача user ID в HTTP-заголовке не поддерживается. Доступ разрешён только к workspace, где этот пользователь состоит в `WorkspaceMember`.
 
-### Frontend
+Это локальный режим одного пользователя, а не авторизация для публичного сервера. Docker публикует API и Vite только на `127.0.0.1`. Перед публичным развёртыванием нужны JWT/session auth, управление членством и production-конфигурация; одного изменения `SECRET_KEY` недостаточно.
 
-- React;
-- TypeScript;
-- Vite;
-- CSS;
-- Lucide React.
-
-Уже реализованы Dashboard, CRM/Kanban, drag-and-drop сделок между стадиями, создание новых сделок, карточки сделок, боковая карточка сделки, история взаимодействий, задачи и редактор Follow-up. На текущем этапе frontend использует mock-данные; далее интерфейс будет подключён к REST API.
-
-### Инфраструктура
-
-- Docker;
-- Docker Compose;
-- REST API;
-- JWT-авторизация — следующий этап.
-
-## Структура проекта
-
-```text
-studioflow/
-├── backend/
-│   ├── alembic/
-│   │   └── versions/
-│   ├── app/
-│   │   ├── api/v1/
-│   │   ├── core/
-│   │   ├── models/
-│   │   └── main.py
-│   ├── tests/
-│   ├── Dockerfile
-│   ├── alembic.ini
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── App.tsx
-│   │   ├── main.tsx
-│   │   └── styles.css
-│   ├── Dockerfile
-│   ├── index.html
-│   ├── package.json
-│   └── tsconfig.json
-├── .env.example
-├── .gitignore
-└── docker-compose.yml
-```
-
-## Локальный запуск
-
-### 1. Клонируйте репозиторий
-
-```bash
-git clone https://github.com/mars485/studioflow.git
-cd studioflow
-```
-
-Репозиторий приватный, поэтому GitHub запросит авторизацию.
-
-### 2. Создайте файл окружения
-
-Linux и macOS:
-
-```bash
-cp .env.example .env
-```
-
-Windows PowerShell:
+## Запуск через Docker
 
 ```powershell
+git clone https://github.com/mars485/studioflow.git
+cd studioflow
 Copy-Item .env.example .env
-```
-
-Перед использованием в интернете обязательно замените значение `SECRET_KEY` в `.env` на длинную случайную строку.
-
-### 3. Запустите контейнеры
-
-```bash
 docker compose up --build
 ```
 
-При запуске будут созданы контейнеры PostgreSQL, FastAPI и Vite frontend, а Alembic применит миграции базы данных.
+В Linux/macOS используйте `cp .env.example .env`. Не добавляйте `.env` и реальные секреты в Git.
 
-После запуска доступны:
+При старте API выполняет `alembic upgrade head`, затем `python -m app.seed`. В dev-режиме seed однократно создаёт локального пользователя, workspace StudioFlow и воронку с четырьмя стадиями. Клиентов и сделок он не создаёт. Повторный запуск не дублирует данные. Для пользовательской базы заполните пользователей, membership, воронки и стадии административным способом: CRUD этих справочников пока ограничен.
 
-- Frontend: `http://localhost:5173/`
-- Swagger UI: `http://localhost:8000/docs`
-- Health API: `http://localhost:8000/api/v1/health`
+- Frontend: http://localhost:5173/
+- API / Swagger: http://localhost:8000/docs
+- Health: http://localhost:8000/api/v1/health
 
-В development-режиме каталоги `./frontend` и `./backend` подключены в контейнеры через bind mounts. Vite использует HMR, а Uvicorn запускается с `--reload`, поэтому изменения локальных файлов подхватываются автоматически.
+Bind mounts, Vite HMR и Uvicorn `--reload` сохранены. Запросы браузера `/api` проходят через Vite proxy к `http://api:8000`; Docker задаёт `API_PROXY_TARGET`. Прямой CORS-доступ браузера к API не требуется.
 
-### 4. Проверьте работу
+### Обновление существующей установки
 
-- Swagger UI: http://localhost:8000/docs
-- Проверка API: http://localhost:8000/api/v1/health
-
-Ожидаемый ответ health endpoint:
-
-```json
-{
-  "status": "ok",
-  "service": "StudioFlow API"
-}
-```
-
-## Запуск frontend
-
-Для frontend требуются **Node.js LTS** и **npm**. npm устанавливается вместе с Node.js.
-
-Официальная страница загрузки Node.js: https://nodejs.org/en/download
-
-После установки перезапустите терминал и проверьте версии:
-
-```powershell
-node --version
-npm --version
-```
-
-### Windows PowerShell
-
-Из корневой папки StudioFlow:
-
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-
-После запуска Vite выведет локальный адрес приложения, обычно `http://localhost:5173/`.
-
-Если PowerShell сообщает, что `npm.ps1` не может быть загружен из-за запрета выполнения сценариев, разрешите локальные сценарии для текущего пользователя:
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-Затем перезапустите PowerShell и снова выполните:
-
-```powershell
-npm install
-npm run dev
-```
-
-### Linux / macOS
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### Production-сборка
-
-```bash
-npm run build
-```
-
-## Синхронизация GitHub → локальный Docker
-
-После изменений в GitHub перейдите в локальную папку StudioFlow и выполните:
+Добавьте в существующий `.env` значения `DEV_AUTH_ENABLED=true` и `DEV_USER_ID=00000000-0000-0000-0000-000000000001` для локального dev-режима. Не перезаписывайте остальные настройки и пароли.
 
 ```powershell
 git pull
+docker compose up --build -d
+docker compose exec frontend npm ci
+docker compose restart frontend
 ```
 
-Если контейнеры уже работают, bind mounts сразу передадут изменённые файлы внутрь контейнеров. Vite автоматически обновит frontend, а FastAPI перезапустится при изменениях Python-кода.
-
-Обычный цикл разработки:
-
-```text
-GitHub → git pull → локальные файлы → Docker bind mount → Vite/FastAPI reload → браузер
-```
-
-После изменений зависимостей (`package.json`, `requirements.txt`) или Dockerfile необходимо пересобрать контейнеры:
+`npm ci` обновляет зависимости в уже существующем volume `frontend_node_modules`. Новые установки получают их при сборке образа. Изменения Python/TSX/CSS подхватываются автоматически; миграции при одном лишь reload не запускаются:
 
 ```powershell
-docker compose up --build
+docker compose exec api alembic upgrade head
 ```
 
-Для обычных изменений `.tsx`, `.css` и `.py` пересборка не требуется.
+Миграция `0002` добавляет nullable-поля к существующим сделкам, сохраняя прежние данные, и включает ограничения суммы и связей workspace. Если в старой базе уже есть отрицательные суммы или некорректные межпространственные связи, миграция остановится: исправьте данные перед повтором. Downgrade до `0001` удаляет новые поля и значения Follow-up, но сохраняет основные сделки. Перед миграцией рабочей базы сделайте резервную копию.
 
-## Полезные команды
+## Frontend отдельно
 
-Остановить проект:
+Нужен Node.js 22.12+ и запущенный backend:
 
-```bash
-docker compose down
+```powershell
+cd frontend
+npm ci
+npm run dev
 ```
 
-Остановить проект и удалить локальные данные PostgreSQL:
+Локальный Vite по умолчанию проксирует `/api` к `http://localhost:8000`. Для другого адреса задайте `API_PROXY_TARGET` в окружении процесса Vite. В production сервер статики должен проксировать `/api` к FastAPI: Vite dev proxy в сборку не входит.
 
-```bash
-docker compose down -v
+```powershell
+npm run test
+npm run build
 ```
 
-Посмотреть журналы API:
+## REST API
 
-```bash
-docker compose logs -f api
+Общий префикс: `/api/v1`. `{workspace_id}` — UUID доступного рабочего пространства; получить его можно через `GET /workspaces`.
+
+| Метод | Путь | Назначение |
+| --- | --- | --- |
+| GET | `/health` | Проверка приложения |
+| GET | `/workspaces` | Рабочие пространства текущего пользователя |
+| GET | `/workspaces/{workspace_id}/pipelines` | Активные воронки со стадиями по порядку |
+| GET / POST | `/workspaces/{workspace_id}/clients` | Список / создание клиента |
+| GET | `/workspaces/{workspace_id}/deals` | Список: `pipeline_id`, `limit` (1–500, по умолчанию 100), `offset` |
+| POST | `/workspaces/{workspace_id}/deals` | Создание сделки, 201 |
+| GET / PATCH / DELETE | `/workspaces/{workspace_id}/deals/{deal_id}` | Чтение / частичное изменение / удаление (204) |
+| PUT / DELETE | `/workspaces/{workspace_id}/deals/{deal_id}/follow-up` | Сохранение / очистка Follow-up |
+
+Создание сделки:
+
+```json
+{
+  "title": "Разработка сайта",
+  "client_id": "UUID клиента",
+  "pipeline_id": "UUID воронки",
+  "stage_id": "UUID стадии",
+  "amount": "65000.25",
+  "contact_name": "Мария",
+  "source": "Сайт",
+  "description": "Лендинг агентства"
+}
 ```
 
-Применить миграции вручную:
+Для переноса достаточно `PATCH` с `{"stage_id":"UUID новой стадии"}`. При смене воронки передайте согласованные `pipeline_id` и `stage_id` вместе. Валюта новой сделки берётся из workspace. Отрицательные суммы, более двух десятичных знаков, пустое название и `null` для обязательных полей отклоняются (422). Неизвестные входные поля тоже отклоняются; `workspace_id` нельзя изменить через тело запроса.
 
-```bash
-docker compose run --rm api alembic upgrade head
+Сохранение Follow-up:
+
+```json
+{
+  "at": "2026-12-01T16:30:00+05:00",
+  "action": "proposal",
+  "comment": "Отправить коммерческое предложение"
+}
 ```
 
-Запустить тесты:
+Действия: `call`, `message`, `proposal`, `decision`. PUT заменяет текущее действие целиком; DELETE очищает все три поля. Подробные схемы доступны в Swagger.
 
-```bash
-docker compose run --rm api pytest
+## Проверки
+
+Полная проверка в изолированной PostgreSQL без портов и production volumes:
+
+```powershell
+docker compose -p studioflow-crm-check -f docker-compose.test.yml run --build --rm backend
+docker compose -p studioflow-crm-check -f docker-compose.test.yml run --build --rm --no-deps frontend
+docker compose -p studioflow-crm-check -f docker-compose.test.yml down
 ```
 
-## Ключевая концепция CRM
+Backend-команда применяет миграции, выполняет `alembic check` и pytest. Проверяются CRUD, денежная точность, Follow-up, часовые пояса, workspace isolation, принадлежность стадии воронке, валидация и ограничения БД. Отдельный тест создаёт временную базу, проверяет сохранность старой сделки при upgrade/downgrade и повторный seed. Поэтому тестовой PostgreSQL нужен CREATE DATABASE; используйте только отдельную тестовую БД.
 
-Одна из центральных функций StudioFlow — **Follow-up**. Активная сделка должна иметь понятное следующее действие: дату и время, тип действия и комментарий. Dashboard должен отвечать менеджеру на вопрос: **«С кем нужно связаться сегодня?»**
+Для запуска pytest без Docker задайте `TEST_DATABASE_URL` и `DATABASE_URL` на мигрированную тестовую PostgreSQL. Без `TEST_DATABASE_URL` интеграционные тесты пропускаются, выполняется health-тест.
 
-## План развития
+Frontend-тесты проверяют загрузку и повтор после ошибки, создание/редактирование/удаление, сохранение и восстановление Follow-up, сохранение черновика при ошибке и перенос Kanban с неуспешным/успешным ответом API.
 
-1. Редактирование существующей сделки.
-2. Сохранение Follow-up.
-3. CRUD API клиентов, сделок и активностей.
-4. Подключение frontend к FastAPI.
-5. JWT-авторизация и Workspace.
-6. История коммуникаций.
-7. Проекты и создание проекта из успешной сделки.
-8. Задачи и дедлайны.
-9. Финансы и аналитика.
-10. Production Docker-конфигурация и развёртывание.
+## Roadmap
 
-## Статус
-
-Проект находится в активной разработке. Backend-каркас и первая интерактивная версия frontend уже реализованы. Kanban уже поддерживает локальное создание сделок и перенос между стадиями. Следующий этап — редактирование и сохранение данных через FastAPI/PostgreSQL.
+1. JWT/session auth, пользователи, роли и управление membership.
+2. Полный CRUD клиентов, контактов, воронок и стадий.
+3. История коммуникаций и изменений, несколько активностей на сделку.
+4. Реальные показатели Dashboard и уведомления Follow-up.
+5. Проекты и создание проекта из успешной сделки.
+6. Задачи, дедлайны и учёт времени.
+7. Финансы, платежи и аналитика.
+8. Production Docker, развёртывание и резервные копии.
