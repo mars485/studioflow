@@ -88,6 +88,7 @@ studioflow/
 │   │   ├── App.tsx
 │   │   ├── main.tsx
 │   │   └── styles.css
+│   ├── Dockerfile
 │   ├── index.html
 │   ├── package.json
 │   └── tsconfig.json
@@ -129,7 +130,15 @@ Copy-Item .env.example .env
 docker compose up --build
 ```
 
-При запуске будут созданы контейнеры API и PostgreSQL, а Alembic применит миграции базы данных.
+При запуске будут созданы контейнеры PostgreSQL, FastAPI и Vite frontend, а Alembic применит миграции базы данных.
+
+После запуска доступны:
+
+- Frontend: `http://localhost:5173/`
+- Swagger UI: `http://localhost:8000/docs`
+- Health API: `http://localhost:8000/api/v1/health`
+
+В development-режиме каталоги `./frontend` и `./backend` подключены в контейнеры через bind mounts. Vite использует HMR, а Uvicorn запускается с `--reload`, поэтому изменения локальных файлов подхватываются автоматически.
 
 ### 4. Проверьте работу
 
@@ -196,6 +205,30 @@ npm run dev
 ```bash
 npm run build
 ```
+
+## Синхронизация GitHub → локальный Docker
+
+После изменений в GitHub перейдите в локальную папку StudioFlow и выполните:
+
+```powershell
+git pull
+```
+
+Если контейнеры уже работают, bind mounts сразу передадут изменённые файлы внутрь контейнеров. Vite автоматически обновит frontend, а FastAPI перезапустится при изменениях Python-кода.
+
+Обычный цикл разработки:
+
+```text
+GitHub → git pull → локальные файлы → Docker bind mount → Vite/FastAPI reload → браузер
+```
+
+После изменений зависимостей (`package.json`, `requirements.txt`) или Dockerfile необходимо пересобрать контейнеры:
+
+```powershell
+docker compose up --build
+```
+
+Для обычных изменений `.tsx`, `.css` и `.py` пересборка не требуется.
 
 ## Полезные команды
 
