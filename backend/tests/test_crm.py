@@ -92,8 +92,9 @@ async def test_invalid_follow_up(crm, follow):
     assert (await crm["http"].put(crm["base"] + "/deals/" + deal["id"] + "/follow-up", json=follow)).status_code == 422
 
 
-async def test_dev_auth_is_opt_in(crm, monkeypatch):
-    monkeypatch.setattr(settings, "dev_auth_enabled", False)
+async def test_dev_auth_never_bypasses_session(crm, monkeypatch):
+    crm["http"].cookies.clear()
+    monkeypatch.setattr(settings, "dev_auth_enabled", True)
     assert (await crm["http"].get("/api/v1/workspaces")).status_code == 401
 
 

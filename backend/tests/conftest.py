@@ -9,6 +9,7 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.security import hash_password
 from app.main import app
 from app.models import Client, Pipeline, PipelineStage, User, Workspace, WorkspaceMember
 
@@ -22,7 +23,7 @@ async def crm(monkeypatch):
     async with engine.connect() as connection:
         transaction = await connection.begin()
         async with AsyncSession(bind=connection, expire_on_commit=False, join_transaction_mode="create_savepoint") as db:
-            user = User(id=uuid4(), email=f"{uuid4()}@example.test", password_hash="!", first_name="Tester")
+            user = User(id=uuid4(), email=f"{uuid4()}@example.com", password_hash=hash_password("test-password-123"), first_name="Tester")
             spaces = [Workspace(id=uuid4(), name=f"Space {i}", slug=str(uuid4())) for i in range(2)]
             db.add_all([user, *spaces])
             await db.flush()
@@ -44,7 +45,9 @@ async def crm(monkeypatch):
 
             app.dependency_overrides[get_db] = override_db
             try:
-                async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+                async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers={"X-StudioFlow-Request": "1"}) as http:
+                    response = await http.post("/api/v1/auth/login", json={"email": user.email, "password": "test-password-123"})
+                    assert response.status_code == 200, response.text
                     yield {"http": http, "db": db, "spaces": spaces, "clients": clients,
                            "pipelines": pipelines, "stages": stages, "next": next_stage, "user": user,
                            "base": f"/api/v1/workspaces/{spaces[0].id}",
