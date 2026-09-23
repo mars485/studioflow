@@ -147,7 +147,43 @@ docker compose up --build
 
 ## Запуск frontend
 
-Требуются Node.js и npm.
+Для frontend требуются **Node.js LTS** и **npm**. npm устанавливается вместе с Node.js.
+
+Официальная страница загрузки Node.js: https://nodejs.org/en/download
+
+После установки перезапустите терминал и проверьте версии:
+
+```powershell
+node --version
+npm --version
+```
+
+### Windows PowerShell
+
+Из корневой папки StudioFlow:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+После запуска Vite выведет локальный адрес приложения, обычно `http://localhost:5173/`.
+
+Если PowerShell сообщает, что `npm.ps1` не может быть загружен из-за запрета выполнения сценариев, разрешите локальные сценарии для текущего пользователя:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+Затем перезапустите PowerShell и снова выполните:
+
+```powershell
+npm install
+npm run dev
+```
+
+### Linux / macOS
 
 ```bash
 cd frontend
@@ -155,7 +191,7 @@ npm install
 npm run dev
 ```
 
-Production-сборка:
+### Production-сборка
 
 ```bash
 npm run build
