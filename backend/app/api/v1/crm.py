@@ -5,20 +5,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.dependencies import current_user, workspace_access
+from app.api.dependencies import workspace_access, workspace_admin
 from app.api.v1.schemas import (ClientCreate, ClientOut, DealCreate, DealOut,
-                                DealUpdate, FollowUp, PipelineOut, WorkspaceOut)
+                                DealUpdate, FollowUp, PipelineOut)
 from app.core.database import get_db
-from app.models import Client, Deal, Pipeline, PipelineStage, User, Workspace, WorkspaceMember
+from app.models import Client, Deal, Pipeline, PipelineStage, Workspace
 
 router = APIRouter(tags=["CRM"])
 scoped = APIRouter(prefix="/workspaces/{workspace_id}")
-
-
-@router.get("/workspaces", response_model=list[WorkspaceOut])
-async def workspaces(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    return (await db.scalars(select(Workspace).join(WorkspaceMember).where(
-        WorkspaceMember.user_id == user.id).order_by(Workspace.name, Workspace.id))).all()
 
 
 @scoped.get("/pipelines", response_model=list[PipelineOut])
@@ -107,7 +101,7 @@ async def update_deal(deal_id: UUID, data: DealUpdate, workspace_id: UUID = Depe
 
 
 @scoped.delete("/deals/{deal_id}", status_code=204)
-async def delete_deal(deal_id: UUID, workspace_id: UUID = Depends(workspace_access),
+async def delete_deal(deal_id: UUID, workspace_id: UUID = Depends(workspace_admin),
                       db: AsyncSession = Depends(get_db)):
     await db.delete(await find_deal(db, workspace_id, deal_id))
     await db.commit()
