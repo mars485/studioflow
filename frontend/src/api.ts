@@ -1,4 +1,12 @@
-export type Workspace = {id: string; name: string; currency: string; timezone: string};
+export type Role = 'OWNER' | 'ADMIN' | 'MANAGER';
+export type User = {id: string; email: string; first_name: string};
+export type Workspace = {id: string; name: string; currency: string; timezone: string; role: Role};
+export type Member = {id: string; user_id: string; email: string; first_name: string; role: Role};
+export const roleNames: Record<Role, string> = {OWNER: 'Владелец', ADMIN: 'Администратор', MANAGER: 'Менеджер'};
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {super(message); this.status = status;}
+}
 export type Client = {id: string; name: string};
 export type Stage = {id: string; pipeline_id: string; name: string; position: number; stage_type: string};
 export type Pipeline = {id: string; name: string; is_default: boolean; stages: Stage[]};
@@ -14,14 +22,18 @@ export type DealInput = Pick<Deal, 'title' | 'client_id' | 'pipeline_id' | 'stag
 
 export async function request<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
-    method, signal, headers: body === undefined ? undefined : {'Content-Type': 'application/json'},
+    method, signal, credentials: 'same-origin', headers: {
+      ...(body === undefined ? {} : {'Content-Type': 'application/json'}),
+      ...(['GET', 'HEAD'].includes(method) ? {} : {'X-StudioFlow-Request': '1'}),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
     const data = await response.json().catch(() => null);
     const detail = typeof data?.detail === 'string' ? data.detail :
       Array.isArray(data?.detail) ? data.detail.map((item: {msg: string}) => item.msg).join('; ') : '';
-    throw new Error(`Не удалось выполнить запрос (${response.status}). ${detail}`);
+    if (response.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event('session-expired'));
+    throw new ApiError(response.status, `Не удалось выполнить запрос (${response.status}). ${detail}`);
   }
   return response.status === 204 ? undefined as T : response.json();
 }
