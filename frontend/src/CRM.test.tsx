@@ -19,7 +19,7 @@ beforeEach(() => {
     const data = options.body ? JSON.parse(String(options.body)) : null;
     const response = (body: unknown, status = 200) => new Response(status === 204 ? null : JSON.stringify(body), {status, headers: {'Content-Type': 'application/json'}});
     if (failLoad || (method !== 'GET' && failMutation)) return response({detail: 'Server unavailable'}, 503);
-    if (url === '/api/v1/workspaces') return response([{id: 'w1', name: 'Studio', currency: 'RUB', timezone: 'Asia/Yekaterinburg'}]);
+    if (url === '/api/v1/workspaces') return response([{id: 'w1', name: 'Studio', role: 'OWNER', currency: 'RUB', timezone: 'Asia/Yekaterinburg'}]);
     if (url.endsWith('/pipelines')) return response([{id: 'p1', name: 'Продажи', is_default: true, stages: [{id: 's1', name: 'Новый лид', position: 0}, {id: 's2', name: 'Контакт', position: 1}]}]);
     if (url.endsWith('/clients')) return response([{id: 'c1', name: 'Клиент'}]);
     if (url.includes('/deals?')) return response(stored);

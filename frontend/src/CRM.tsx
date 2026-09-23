@@ -42,8 +42,8 @@ function DealForm({deal, clients, pipelines, initialPipeline, busy, error, onClo
   </div>;
 }
 
-function DealDrawer({deal, client, stage, busy, onClose, onEdit, onDelete, onFollow}: {
-  deal: Deal; client?: Client; stage?: string; busy: boolean;
+function DealDrawer({deal, client, stage, busy, canDelete, onClose, onEdit, onDelete, onFollow}: {
+  deal: Deal; client?: Client; stage?: string; busy: boolean; canDelete: boolean;
   onClose: () => void; onEdit: () => void; onDelete: () => Promise<void>;
   onFollow: (value: {at: string; action: Action; comment: string} | null) => Promise<void>;
 }) {
@@ -63,7 +63,7 @@ function DealDrawer({deal, client, stage, busy, onClose, onEdit, onDelete, onFol
   return <div className="drawerBackdrop" onClick={() => !busy && onClose()}><aside className="drawer" role="dialog" aria-modal="true" aria-label="Карточка сделки" onClick={e => e.stopPropagation()}>
     <div className="drawerHead"><div><small>Сделка</small><h2>{deal.title}</h2></div><button aria-label="Закрыть" disabled={busy} onClick={onClose}><X size={20}/></button></div>
     <div className="dealStatus"><span>{stage}</span><strong>{money(deal.amount, deal.currency)}</strong></div>
-    <div className="quickActions"><button disabled={busy} onClick={onEdit}>Редактировать</button><button disabled={busy} onClick={async () => {if (window.confirm('Удалить сделку?')) {try {await onDelete();} catch(e) {setError(errorText(e));}}}}>Удалить</button></div>
+    <div className="quickActions"><button disabled={busy} onClick={onEdit}>Редактировать</button>{canDelete && <button disabled={busy} onClick={async () => {if (window.confirm('Удалить сделку?')) {try {await onDelete();} catch(e) {setError(errorText(e));}}}}>Удалить</button>}</div>
     <section className="drawerSection"><h3>Контакт</h3><p>{client?.name}</p><p>{deal.contact_name || 'Контакт не указан'}</p><p>Источник: {deal.source || 'Не указан'}</p>{deal.description && <p>{deal.description}</p>}</section>
     <form className="drawerSection followEditor" onSubmit={e => {e.preventDefault(); void save();}}>
       <h3>Следующий контакт</h3><p className="muted">Дата и время в часовом поясе вашего устройства.</p>
@@ -165,7 +165,7 @@ export default function CRM() {
       <button className="filter" aria-pressed={todayOnly} onClick={() => setTodayOnly(!todayOnly)}><CalendarClock size={17}/>Follow-up сегодня <b>{pipelineItems.filter(isToday).length}</b></button>
     </div>
     {error && <div role="alert" className="errorMessage">{error} <button disabled={busy || loading} onClick={() => setReload(n => n + 1)}>Повторить загрузку</button></div>}
-    {loading ? <p role="status">Загрузка CRM…</p> : !pipeline ? <p>Нет доступных воронок. Проверьте настройку рабочего пространства.</p> : <>
+    {loading ? <p role="status">Загрузка CRM…</p> : !pipeline ? <p>Нет доступных воронок. Откройте «Настройки», чтобы создать студию, или попросите владельца добавить вас.</p> : <>
       {busy && <p role="status">Сохранение…</p>}
       {!filtered.length && <p className="muted">{items.length ? 'Нет сделок по выбранным условиям.' : 'Пока нет сделок. Создайте первую сделку.'}</p>}
       <div className="kanban" style={{gridTemplateColumns: `repeat(${pipeline.stages.length || 1}, minmax(230px, 1fr))`}}>
@@ -178,7 +178,7 @@ export default function CRM() {
         </section>;})}
       </div>
     </>}
-    {selected && <DealDrawer key={selected.id} deal={selected} client={clients.find(c => c.id === selected.client_id)} stage={pipelines.flatMap(p => p.stages).find(s => s.id === selected.stage_id)?.name} busy={busy}
+    {selected && <DealDrawer key={selected.id} canDelete={['OWNER', 'ADMIN'].includes(workspaces.find(w => w.id === workspaceId)?.role || '')} deal={selected} client={clients.find(c => c.id === selected.client_id)} stage={pipelines.flatMap(p => p.stages).find(s => s.id === selected.stage_id)?.name} busy={busy}
       onClose={() => setSelectedId(null)} onEdit={() => {setFormError(''); setEditing(selected);}}
       onDelete={() => mutate(async () => {await request(`${base}/deals/${selected.id}`, 'DELETE'); setItems(prev => prev.filter(d => d.id !== selected.id)); setSelectedId(null);})}
       onFollow={value => mutate(async () => replace(await request<Deal>(`${base}/deals/${selected.id}/follow-up`, value ? 'PUT' : 'DELETE', value || undefined)))}/>}

@@ -15,6 +15,7 @@ class Output(BaseModel):
 
 
 class WorkspaceOut(Output):
+    role: Literal["OWNER", "ADMIN", "MANAGER"]
     id: UUID
     name: str
     currency: str
