@@ -3,6 +3,7 @@ import Auth from './Auth';
 import WorkspaceSettings from './WorkspaceSettings';
 import {ApiError, errorText, request, type User} from './api';
 import CRM from './CRM';
+import Brand from './Brand';
 import {Bell,Building2,CheckSquare,ChevronRight,FolderKanban,LayoutDashboard,Settings,Users,Wallet,BarChart3,Phone,MessageCircle,Plus} from 'lucide-react';
 
 const menu=[[LayoutDashboard,'Главная'],[Users,'CRM'],[FolderKanban,'Проекты'],[CheckSquare,'Задачи'],[Building2,'Клиенты'],[Wallet,'Финансы'],[BarChart3,'Аналитика'],[Settings,'Настройки']] as const;
@@ -35,7 +36,7 @@ export default function App(){
    try {await request('/auth/logout', 'POST'); setUser(null); setPage('CRM');}
    catch(e) {setError(errorText(e));} finally {setLeaving(false);}
  }
- return <div className="shell"><aside className="sidebar"><div className="brand"><div className="brandMark">S</div><div><b>StudioFlow</b><span>Web Studio OS</span></div></div><nav>{menu.map(([Icon,label])=><button onClick={()=>setPage(label)} className={page===label?'active':''} key={label}><Icon size={19}/><span>{label}</span></button>)}</nav><div className="profile"><div className="avatar">{user.first_name.slice(0, 1).toUpperCase()}</div><div><b>{user.first_name}</b><span title={user.email}>{user.email}</span><button disabled={leaving} onClick={() => void logout()}>{leaving ? 'Выход…' : 'Выйти'}</button></div></div></aside>
+ return <div className="shell"><aside className="sidebar"><Brand /><nav>{menu.map(([Icon,label])=><button onClick={()=>setPage(label)} className={page===label?'active':''} key={label}><Icon size={19}/><span>{label}</span></button>)}</nav><div className="profile"><div className="avatar">{user.first_name.slice(0, 1).toUpperCase()}</div><div><b>{user.first_name}</b><span title={user.email}>{user.email}</span><button disabled={leaving} onClick={() => void logout()}>{leaving ? 'Выход…' : 'Выйти'}</button></div></div></aside>
  <main>{error && <p role="alert" className="errorMessage">{error}</p>}{page==='CRM'?<CRM/>:page==='Настройки'?<WorkspaceSettings/>:<Dashboard openCRM={()=>setPage('CRM')}/>}</main></div>
 }
 function Top({title,subtitle,onNew}:{title:string,subtitle:string,onNew?:()=>void}){return <header><div><h1>{title}</h1><p>{subtitle}</p></div><div className="headerActions"><button className="icon"><Bell size={19}/><i/></button><button className="primary" onClick={onNew}><Plus size={18}/>Новая сделка</button></div></header>}

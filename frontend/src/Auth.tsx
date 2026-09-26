@@ -1,5 +1,6 @@
 import {useState, type FormEvent} from 'react';
 import {errorText, request, type User} from './api';
+import Brand from './Brand';
 
 export default function Auth({onLogin}: {onLogin: (user: User) => void}) {
   const [register, setRegister] = useState(false);
@@ -19,7 +20,7 @@ export default function Auth({onLogin}: {onLogin: (user: User) => void}) {
     } catch (e) {setError(errorText(e));} finally {setBusy(false);}
   }
   return <div className="authPage"><section className="card authCard">
-    <div className="brand"><div className="brandMark">S</div><div><b>StudioFlow</b><span>Web Studio OS</span></div></div>
+    <Brand />
     <h1>{register ? 'Создать аккаунт' : 'Войти в StudioFlow'}</h1>
     <p className="muted">Продажи и работа вашей студии в одном месте.</p>
     <form onSubmit={submit}><fieldset disabled={busy}>
