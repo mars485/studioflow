@@ -157,7 +157,7 @@ export default function CRM() {
   const filtered = pipelineItems.filter(d => (!todayOnly || isToday(d)) &&
     `${d.title} ${clients.find(c => c.id === d.client_id)?.name || ''} ${d.contact_name || ''}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
   return <>
-    <header><div><h1>CRM · Сделки</h1><p>Управление продажами и следующими контактами</p></div><button className="primary" disabled={loading || busy || !pipeline?.stages.length} onClick={() => {setFormError(''); setEditing('new');}}><Plus size={18}/>Новая сделка</button></header>
+    <header className="pageHeader crmHeader"><div><span className="brandEyebrow">IT GROUP <i /> WORKSPACE</span><h1>CRM · Сделки</h1><p>Управление продажами и следующими контактами</p></div><button className="primary" disabled={loading || busy || !pipeline?.stages.length} onClick={() => {setFormError(''); setEditing('new');}}><Plus size={18}/>Новая сделка</button></header>
     <div className="crmTools">
       <select aria-label="Рабочее пространство" disabled={loading || busy} value={workspaceId} onChange={e => setWorkspaceId(e.target.value)}>{workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
       <select aria-label="Воронка" disabled={loading || busy} value={pipelineId} onChange={e => setPipelineId(e.target.value)}>{pipelines.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>

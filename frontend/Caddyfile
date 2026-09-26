@@ -1,0 +1,35 @@
+{
+    servers {
+        trusted_proxies static {$TRUSTED_PROXY:127.0.0.1}
+        trusted_proxies_strict
+    }
+}
+
+{$DOMAIN} {
+    tls {
+        issuer acme {
+            disable_tlsalpn_challenge
+        }
+    }
+    encode zstd gzip
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        X-Frame-Options DENY
+        -Server
+    }
+    @api path /api /api/*
+    handle @api {
+        request_body {
+            max_size 1MB
+        }
+        reverse_proxy api:8000 {
+            header_up X-Forwarded-For {client_ip}
+        }
+    }
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}

@@ -1,0 +1,97 @@
+# Standalone configuration: never combine with the development Compose file.
+name: studioflow-production
+x-api: &api
+  image: studioflow-api:${APP_VERSION:-local}
+  build:
+    context: ./backend
+    dockerfile: Dockerfile.production
+  environment:
+    DATABASE_URL: postgresql+asyncpg://studioflow:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/studioflow
+    SESSION_COOKIE_SECURE: "true"
+    ALLOWED_ORIGINS: '["https://${DOMAIN:?Set DOMAIN}"]'
+    DEV_AUTH_ENABLED: "false"
+  networks: [private]
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: studioflow
+      POSTGRES_USER: studioflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [private]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studioflow -d studioflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  migrate:
+    <<: *api
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *api
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  web:
+    image: studioflow-web:${APP_VERSION:-local}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.production
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN}
+      TRUSTED_PROXY: ${TRUSTED_PROXY:-127.0.0.1}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [public, private]
+    depends_on:
+      api:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  public:
+    enable_ipv6: ${ENABLE_IPV6:-false}
+  private:
+    internal: true
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
