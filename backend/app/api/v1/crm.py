@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.api.dependencies import current_user, workspace_access, workspace_admin
 from app.api.v1.schemas import (ClientCreate, ClientOut, DealCreate, DealOut,
                                 DealUpdate, DealActivityCreate, DealActivityOut, FollowUp,
-                                FollowUpComplete, FollowUpCompleteResult, FollowUpCompletionOut, PipelineOut,
+                                FollowUpComplete, FollowUpCompleteResult, FollowUpCompletionOut, PipelineCreate, PipelineOut, PipelineUpdate,
                                 StageCreate, StageOrder, StageOut, StageUpdate)
 from app.core.database import get_db
 from app.models import Client, Deal, DealActivity, FollowUpCompletion, Pipeline, PipelineStage, User, Workspace, WorkspaceMember
@@ -20,12 +20,114 @@ scoped = APIRouter(prefix="/workspaces/{workspace_id}")
 
 
 @scoped.get("/pipelines", response_model=list[PipelineOut])
-async def pipelines(workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
-    rows = (await db.scalars(select(Pipeline).where(
-        Pipeline.workspace_id == workspace_id, Pipeline.is_active.is_(True)
-    ).options(selectinload(Pipeline.stages)).order_by(Pipeline.is_default.desc(), Pipeline.id))).all()
+async def pipelines(include_inactive: bool = False, workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    query = select(Pipeline).where(Pipeline.workspace_id == workspace_id)
+    if not include_inactive:
+        query = query.where(Pipeline.is_active.is_(True))
+    rows = (await db.scalars(query.options(selectinload(Pipeline.stages))
+                             .order_by(Pipeline.is_default.desc(), Pipeline.id))).all()
     return [PipelineOut(id=p.id, name=p.name, is_default=p.is_default,
-                        stages=sorted(p.stages, key=lambda s: s.position)) for p in rows]
+                        is_active=p.is_active, stages=sorted(p.stages, key=lambda s: s.position)) for p in rows]
+
+
+async def lock_workspace(db: AsyncSession, workspace_id: UUID):
+    await db.scalar(select(Workspace.id).where(Workspace.id == workspace_id).with_for_update())
+
+
+@scoped.post("/pipelines", response_model=PipelineOut, status_code=201)
+async def create_pipeline(data: PipelineCreate, workspace_id: UUID = Depends(workspace_admin),
+                          db: AsyncSession = Depends(get_db)):
+    await lock_workspace(db, workspace_id)
+    has_default = await db.scalar(select(Pipeline.id).where(Pipeline.workspace_id == workspace_id,
+                                                            Pipeline.is_default.is_(True)).limit(1))
+    row = Pipeline(workspace_id=workspace_id, name=data.name, is_default=has_default is None, is_active=True)
+    db.add(row)
+    await db.flush()
+    for position, (name, stage_type) in enumerate([
+        ("Новый лид", StageType.OPEN), ("В работе", StageType.OPEN),
+        ("Успешно", StageType.WON), ("Отказ", StageType.LOST),
+    ]):
+        db.add(PipelineStage(workspace_id=workspace_id, pipeline_id=row.id, name=name,
+                             position=position, stage_type=stage_type))
+    await db.commit()
+    return await db.scalar(select(Pipeline).where(Pipeline.id == row.id).options(selectinload(Pipeline.stages)))
+
+
+@scoped.patch("/pipelines/{pipeline_id}", response_model=PipelineOut)
+async def update_pipeline(pipeline_id: UUID, data: PipelineUpdate,
+                          workspace_id: UUID = Depends(workspace_admin), db: AsyncSession = Depends(get_db)):
+    row = await lock_pipeline(db, workspace_id, pipeline_id)
+    row.name = data.name
+    await db.commit()
+    return await db.scalar(select(Pipeline).where(Pipeline.id == pipeline_id).options(selectinload(Pipeline.stages)))
+
+
+@scoped.post("/pipelines/{pipeline_id}/activate", response_model=PipelineOut)
+async def activate_pipeline(pipeline_id: UUID, workspace_id: UUID = Depends(workspace_admin),
+                            db: AsyncSession = Depends(get_db)):
+    await lock_workspace(db, workspace_id)
+    row = await lock_pipeline(db, workspace_id, pipeline_id)
+    row.is_active = True
+    await db.commit()
+    return await db.scalar(select(Pipeline).where(Pipeline.id == pipeline_id).options(selectinload(Pipeline.stages)))
+
+
+@scoped.post("/pipelines/{pipeline_id}/default", response_model=PipelineOut)
+async def make_default_pipeline(pipeline_id: UUID, workspace_id: UUID = Depends(workspace_admin),
+                                db: AsyncSession = Depends(get_db)):
+    await lock_workspace(db, workspace_id)
+    row = await lock_pipeline(db, workspace_id, pipeline_id)
+    if not row.is_active:
+        raise HTTPException(409, "Только активную воронку можно сделать основной")
+    rows = (await db.scalars(select(Pipeline).where(Pipeline.workspace_id == workspace_id))).all()
+    for pipeline in rows:
+        pipeline.is_default = pipeline.id == pipeline_id
+    await db.commit()
+    return await db.scalar(select(Pipeline).where(Pipeline.id == pipeline_id).options(selectinload(Pipeline.stages)))
+
+
+@scoped.post("/pipelines/{pipeline_id}/deactivate", response_model=PipelineOut)
+async def deactivate_pipeline(pipeline_id: UUID, workspace_id: UUID = Depends(workspace_admin),
+                              db: AsyncSession = Depends(get_db)):
+    await lock_workspace(db, workspace_id)
+    row = await lock_pipeline(db, workspace_id, pipeline_id)
+    replacement = await db.scalar(select(Pipeline).where(Pipeline.workspace_id == workspace_id,
+        Pipeline.id != pipeline_id, Pipeline.is_active.is_(True)).order_by(Pipeline.id).limit(1))
+    if replacement is None:
+        raise HTTPException(409, "Нельзя отключить единственную активную воронку")
+    row.is_active = False
+    if row.is_default:
+        row.is_default = False
+        replacement.is_default = True
+    await db.commit()
+    return await db.scalar(select(Pipeline).where(Pipeline.id == pipeline_id).options(selectinload(Pipeline.stages)))
+
+
+@scoped.delete("/pipelines/{pipeline_id}", status_code=204)
+async def delete_pipeline(pipeline_id: UUID, workspace_id: UUID = Depends(workspace_admin),
+                          db: AsyncSession = Depends(get_db)):
+    await lock_workspace(db, workspace_id)
+    row = await lock_pipeline(db, workspace_id, pipeline_id)
+    (await db.scalars(select(PipelineStage).where(PipelineStage.workspace_id == workspace_id,
+        PipelineStage.pipeline_id == pipeline_id).with_for_update())).all()
+    if await db.scalar(select(Deal.id).where(Deal.workspace_id == workspace_id,
+                                              Deal.pipeline_id == pipeline_id).limit(1)):
+        raise HTTPException(409, "Воронку со сделками можно только отключить")
+    if row.is_active:
+        replacement = await db.scalar(select(Pipeline).where(Pipeline.workspace_id == workspace_id,
+            Pipeline.id != pipeline_id, Pipeline.is_active.is_(True)).order_by(Pipeline.id).limit(1))
+        if replacement is None:
+            raise HTTPException(409, "Нельзя удалить единственную активную воронку")
+        if row.is_default:
+            replacement.is_default = True
+    await db.refresh(row, attribute_names=["stages"])
+    await db.delete(row)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "Воронку со сделками можно только отключить")
+    return Response(status_code=204)
 
 
 async def lock_pipeline(db: AsyncSession, workspace_id: UUID, pipeline_id: UUID) -> Pipeline:
