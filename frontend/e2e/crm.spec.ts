@@ -1,0 +1,37 @@
+import {expect, test} from '@playwright/test';
+
+test('registration through follow-up survives reload', async ({page}) => {
+  const stamp = Date.now();
+  const deal = `E2E deal ${stamp}`;
+  await page.goto('/');
+  if (await page.getByRole('button', {name: 'Повторить'}).isVisible()) await page.getByRole('button', {name: 'Повторить'}).click();
+  await page.getByRole('button', {name: 'Создать аккаунт'}).click();
+  await page.getByLabel('Ваше имя').fill('E2E');
+  await page.getByLabel('Email').fill(`e2e-${stamp}@example.com`);
+  await page.getByLabel('Пароль').fill(`TestPassword-${stamp}`);
+  await page.getByRole('button', {name: 'Зарегистрироваться'}).click();
+  await page.getByRole('button', {name: 'Настройки'}).click();
+  await page.getByLabel('Название новой студии').fill(`E2E studio ${stamp}`);
+  await page.getByRole('button', {name: 'Создать студию'}).click();
+  await page.getByRole('button', {name: 'CRM', exact: true}).click();
+  await page.getByRole('button', {name: 'Новая сделка'}).click();
+  const form = page.getByRole('dialog', {name: 'Новая сделка'});
+  await form.getByLabel('Название сделки').fill(deal);
+  await form.getByLabel('Название клиента').fill(`E2E client ${stamp}`);
+  await form.getByRole('button', {name: 'Сохранить сделку'}).click();
+  const card = page.getByRole('article', {name: `Открыть ${deal}`});
+  await expect(card).toBeVisible();
+  const stage = page.locator('.kanbanCol').nth(1);
+  await card.dragTo(stage);
+  await expect(stage.getByRole('article', {name: `Открыть ${deal}`})).toBeVisible();
+  await card.click();
+  const drawer = page.getByRole('dialog', {name: 'Карточка сделки'});
+  await drawer.getByLabel('Дата и время').fill('2026-12-01T16:30');
+  await drawer.getByLabel('Что сделать').selectOption('call');
+  await drawer.getByLabel('Комментарий').fill('E2E follow-up');
+  await drawer.getByRole('button', {name: 'Сохранить follow-up'}).click();
+  await expect(drawer.getByRole('status')).toContainText('сохранён');
+  await page.reload();
+  await page.getByRole('article', {name: `Открыть ${deal}`}).click();
+  await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByLabel('Комментарий')).toHaveValue('E2E follow-up');
+});

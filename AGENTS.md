@@ -12,4 +12,11 @@ docker compose -p studioflow-crm-check -f docker-compose.test.yml run --build --
 docker compose -p studioflow-crm-check -f docker-compose.test.yml down
 ```
 
+Browser E2E uses a separate disposable PostgreSQL instance and internal Docker network:
+
+```powershell
+docker compose -p studioflow-e2e-check -f docker-compose.e2e.yml run --build --rm e2e
+docker compose -p studioflow-e2e-check -f docker-compose.e2e.yml down
+```
+
 If Docker is unavailable, run `npm ci`, `npm run test`, and `npm run build` in `frontend`; report backend integration tests as unverified. Never run these checks against production data or volumes.
