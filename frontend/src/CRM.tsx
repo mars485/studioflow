@@ -119,7 +119,8 @@ function DealForm({deal, clients, contacts, members, pipelines, initialPipeline,
       stage_id: stageId, amount: String(form.get('amount') || '0'),
       responsible_user_id: String(form.get('responsible') || '') || null,
       contact_name: contactId ? null : String(form.get('contact') || ''), source: String(form.get('source') || ''),
-      description: String(form.get('description') || '')}, String(form.get('newClient') || '').trim());
+      description: String(form.get('description') || ''), start_date: String(form.get('start_date') || '') || null,
+      end_date: String(form.get('end_date') || '') || null}, String(form.get('newClient') || '').trim());
   };
   return <div className="modalBackdrop" onClick={() => !busy && onClose()}>
     <form className="dealModal" role="dialog" aria-modal="true" aria-label={deal ? 'Редактирование сделки' : 'Новая сделка'} onSubmit={submit} onClick={e => e.stopPropagation()}>
@@ -132,6 +133,8 @@ function DealForm({deal, clients, contacts, members, pipelines, initialPipeline,
         {!contactId && <label>Контактное лицо текстом<input name="contact" defaultValue={deal?.contact_name || ''} maxLength={255}/></label>}
         <label>Сумма<input name="amount" type="number" min="0" max="999999999999.99" step="0.01" defaultValue={deal?.amount || '50000'} required/></label>
         <label>Источник<input name="source" list="sources" defaultValue={deal?.source || ''} maxLength={100}/><datalist id="sources">{['2ГИС', 'WhatsApp', 'Сайт', 'Рекомендация', 'Холодный'].map(s => <option key={s}>{s}</option>)}</datalist></label>
+        <label>Начало сделки<input name="start_date" type="date" defaultValue={deal?.start_date || ''}/></label>
+        <label>Окончание сделки<input name="end_date" type="date" defaultValue={deal?.end_date || ''}/></label>
         <label>Воронка<select value={pipelineId} onChange={e => {setPipelineId(e.target.value); setStageId(pipelines.find(p => p.id === e.target.value)?.stages[0]?.id || '');}}>{pipelines.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
         <label>Стадия<select required value={stageId} onChange={e => setStageId(e.target.value)}>{pipeline?.stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
         <label>Ответственный<select name="responsible" defaultValue={deal?.responsible_user_id || ''}><option value="">Не назначен</option>{members.map(member => <option key={member.user_id} value={member.user_id}>{member.first_name} · {member.email}</option>)}</select></label>
@@ -217,7 +220,7 @@ function DealDrawer({deal, client, contact, stage, responsibleName, base, busy, 
     <div className="drawerHead"><div><small>Сделка</small><h2>{deal.title}</h2></div><button aria-label="Закрыть" disabled={busy} onClick={onClose}><X size={20}/></button></div>
     <div className="dealStatus"><span>{stage}</span><strong>{money(deal.amount, deal.currency)}</strong></div>
     <div className="quickActions"><button disabled={busy} onClick={onEdit}>Редактировать</button>{canDelete && <button disabled={busy} onClick={async () => {if (window.confirm('Удалить сделку?')) {try {await onDelete();} catch(e) {setError(errorText(e));}}}}>Удалить</button>}</div>
-    <section className="drawerSection"><h3>Контакт</h3><p>{client && <button type="button" className="clientLink" onClick={onOpenClient}>{client.name}</button>}</p><p>{contact ? <button type="button" className="clientLink" onClick={onOpenContact}>{contactName(contact)}</button> : deal.contact_name || 'Контакт не указан'}</p><p>Ответственный: {responsibleName || 'Не назначен'}</p><p>Источник: {deal.source || 'Не указан'}</p>{deal.description && <p>{deal.description}</p>}</section>
+    <section className="drawerSection"><h3>Контакт</h3><p>{client && <button type="button" className="clientLink" onClick={onOpenClient}>{client.name}</button>}</p><p>{contact ? <button type="button" className="clientLink" onClick={onOpenContact}>{contactName(contact)}</button> : deal.contact_name || 'Контакт не указан'}</p><p>Ответственный: {responsibleName || 'Не назначен'}</p><p>Источник: {deal.source || 'Не указан'}</p><p>Сроки: {deal.start_date || '—'} — {deal.end_date || '—'}</p>{deal.description && <p>{deal.description}</p>}</section>
     <form className="drawerSection followEditor" onSubmit={e => {e.preventDefault(); void save();}}>
       <h3>Следующий контакт</h3><p className="muted">Дата и время в часовом поясе вашего устройства.</p>
       <fieldset disabled={busy}>

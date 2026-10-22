@@ -10,6 +10,27 @@ from app.models import Deal, Pipeline, PipelineStage, User, WorkspaceMember
 pytestmark = pytest.mark.asyncio
 
 
+async def test_deal_dates_validate_order_and_persist(crm):
+    http, base = crm["http"], crm["base"]
+    invalid = await http.post(base + "/deals", json={**crm["payload"],
+        "start_date": "2026-11-02", "end_date": "2026-10-23"})
+    assert invalid.status_code == 422
+    created = await http.post(base + "/deals", json={**crm["payload"],
+        "start_date": "2026-10-23", "end_date": "2026-11-02"})
+    assert created.status_code == 201, created.text
+    deal_id = created.json()["id"]
+    assert created.json()["start_date"] == "2026-10-23"
+    assert created.json()["end_date"] == "2026-11-02"
+    path = base + "/deals/" + deal_id
+    assert (await http.patch(path, json={"start_date": "2026-11-03"})).status_code == 422
+    assert (await http.get(path)).json()["start_date"] == "2026-10-23"
+    updated = await http.patch(path, json={"end_date": None, "start_date": "2026-11-03"})
+    assert updated.status_code == 200 and updated.json()["end_date"] is None
+    other = f'/api/v1/workspaces/{crm["spaces"][1].id}/deals/{deal_id}'
+    assert (await http.get(other)).status_code == 404
+    assert (await http.patch(other, json={"end_date": "2026-11-05"})).status_code == 404
+
+
 async def test_company_profile_search_deals_and_workspace_access(crm):
     http, base = crm["http"], crm["base"]
     path = base + "/clients"

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
@@ -177,6 +177,14 @@ class DealCreate(BaseModel):
     contact_name: str | None = Field(default=None, max_length=255)
     source: str | None = Field(default=None, max_length=100)
     description: str | None = Field(default=None, max_length=10000)
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @model_validator(mode="after")
+    def check_dates(self):
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            raise ValueError("Дата начала не может быть позже даты окончания")
+        return self
 
 
 class DealUpdate(BaseModel):
@@ -191,6 +199,8 @@ class DealUpdate(BaseModel):
     contact_name: str | None = Field(default=None, max_length=255)
     source: str | None = Field(default=None, max_length=100)
     description: str | None = Field(default=None, max_length=10000)
+    start_date: date | None = None
+    end_date: date | None = None
 
     @model_validator(mode="after")
     def reject_null_required_fields(self):
@@ -253,6 +263,8 @@ class DealOut(Output):
     contact_name: str | None
     source: str | None
     description: str | None
+    start_date: date | None
+    end_date: date | None
     follow_up_at: datetime | None
     follow_up_action: Action | None
     follow_up_comment: str | None
