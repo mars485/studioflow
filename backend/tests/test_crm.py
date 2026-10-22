@@ -7,8 +7,34 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import settings
 from app.core.security import hash_password
 from app.models import Deal, Pipeline, PipelineStage, User, WorkspaceMember
+from app.models.entities import StageType
 
 pytestmark = pytest.mark.asyncio
+
+
+async def test_my_day_shows_only_active_assigned_work(crm):
+    http, base = crm["http"], crm["base"]
+    assigned = (await http.post(base + "/deals", json={**crm["payload"],
+        "responsible_user_id": str(crm["user"].id)})).json()
+    path = base + "/deals/" + assigned["id"]
+    assert (await http.put(path + "/follow-up", json={"at": "2026-12-01T10:00:00Z", "action": "call"})).status_code == 200
+    assigned_task = (await http.post(path + "/tasks", json={"title": "Позвонить", "assignee_user_id": str(crm["user"].id)})).json()
+    await http.post(path + "/tasks", json={"title": "Без исполнителя"})
+    other = (await http.post(base + "/deals", json={**crm["payload"], "title": "Не моя сделка"})).json()
+    await http.post(base + "/deals/" + other["id"] + "/tasks", json={"title": "Без исполнителя"})
+    response = await http.get(base + "/my-day")
+    assert response.status_code == 200, response.text
+    day = response.json()
+    assert [item["task"]["id"] for item in day["tasks"]] == [assigned_task["id"]]
+    assert [item["deal_id"] for item in day["follow_ups"]] == [assigned["id"]]
+    await http.patch(path + "/tasks/" + assigned_task["id"], json={"status": "DONE"})
+    assert (await http.get(base + "/my-day")).json()["tasks"] == []
+    crm["next"].stage_type = StageType.WON
+    await crm["db"].commit()
+    assert (await http.patch(path, json={"stage_id": str(crm["next"].id)})).status_code == 200
+    assert (await http.get(base + "/my-day")).json()["follow_ups"] == []
+    foreign = f'/api/v1/workspaces/{crm["spaces"][1].id}/my-day'
+    assert (await http.get(foreign)).status_code == 404
 
 
 async def test_deal_tasks_are_scoped_and_keep_completion_actor(crm):

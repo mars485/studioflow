@@ -86,6 +86,13 @@ test('registration through follow-up survives reload', async ({page}) => {
   await page.getByRole('article', {name: `Открыть ${deal}`}).click();
   await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByText('Сроки: 2026-10-23 — 2026-11-02')).toBeVisible();
   await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByText(`E2E задача ${stamp}`, {exact: true})).toBeVisible();
+  await page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: 'Закрыть'}).click();
+  await page.getByRole('button', {name: 'Мой день'}).click();
+  const myDay = page.getByRole('region', {name: 'Мой день'});
+  await expect(myDay.getByText(`E2E задача ${stamp}`, {exact: true})).toBeVisible();
+  await expect(myDay.getByText('Следующий контакт', {exact: false})).toBeVisible();
+  await page.getByRole('button', {name: 'Мой день'}).click();
+  await page.getByRole('article', {name: `Открыть ${deal}`}).click();
   await page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: `E2E client ${stamp}`}).click();
   await expect(page.getByRole('dialog', {name: 'Компании'}).getByLabel('Рабочий телефон')).toHaveValue('+7 900 000-00-00');
   await page.getByRole('dialog', {name: 'Компании'}).getByRole('button', {name: 'Закрыть'}).click();

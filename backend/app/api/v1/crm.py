@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.api.dependencies import current_user, workspace_access, workspace_admin
 from app.api.v1.schemas import (ClientCreate, ClientOut, ClientUpdate, ContactCreate, ContactOut, ContactUpdate, DealCreate, DealOut,
                                 DealUpdate, DealActivityCreate, DealActivityOut, DealTaskCreate, DealTaskOut, DealTaskUpdate, FollowUp,
-                                FollowUpComplete, FollowUpCompleteResult, FollowUpCompletionOut, PipelineCreate, PipelineOut, PipelineUpdate,
+                                FollowUpComplete, FollowUpCompleteResult, FollowUpCompletionOut, MyDayOut, PipelineCreate, PipelineOut, PipelineUpdate,
                                 StageCreate, StageOrder, StageOut, StageUpdate)
 from app.core.database import get_db
 from app.models import Client, Contact, ContactClient, Deal, DealActivity, DealTask, FollowUpCompletion, Pipeline, PipelineStage, User, Workspace, WorkspaceMember
@@ -467,6 +467,26 @@ async def deals(workspace_id: UUID = Depends(workspace_access), db: AsyncSession
     if pipeline_id:
         query = query.where(Deal.pipeline_id == pipeline_id)
     return (await db.scalars(query.order_by(Deal.created_at, Deal.id).limit(limit).offset(offset))).all()
+
+
+@scoped.get("/my-day", response_model=MyDayOut)
+async def my_day(workspace_id: UUID = Depends(workspace_access), user: User = Depends(current_user),
+                 db: AsyncSession = Depends(get_db)):
+    active_deals = (Deal.workspace_id == workspace_id, PipelineStage.workspace_id == workspace_id,
+                    PipelineStage.stage_type == StageType.OPEN)
+    task_rows = (await db.execute(select(DealTask, Deal.title).join(Deal,
+        (Deal.id == DealTask.deal_id) & (Deal.workspace_id == DealTask.workspace_id))
+        .join(PipelineStage, PipelineStage.id == Deal.stage_id)
+        .where(*active_deals, DealTask.workspace_id == workspace_id,
+               DealTask.assignee_user_id == user.id, DealTask.status == "OPEN")
+        .order_by(DealTask.due_at, DealTask.created_at, DealTask.id))).all()
+    follow_rows = (await db.scalars(select(Deal).join(PipelineStage, PipelineStage.id == Deal.stage_id)
+        .where(*active_deals, Deal.responsible_user_id == user.id, Deal.follow_up_at.is_not(None))
+        .order_by(Deal.follow_up_at, Deal.id))).all()
+    return {"tasks": [{"task": task, "deal_title": title} for task, title in task_rows],
+            "follow_ups": [{"deal_id": deal.id, "deal_title": deal.title,
+                            "at": deal.follow_up_at, "action": deal.follow_up_action,
+                            "comment": deal.follow_up_comment} for deal in follow_rows]}
 
 
 @scoped.post("/deals", response_model=DealOut, status_code=201)

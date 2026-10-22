@@ -301,6 +301,24 @@ class DealTaskOut(Output):
     completed_at: datetime | None
 
 
+class MyDayTask(BaseModel):
+    task: DealTaskOut
+    deal_title: str
+
+
+class MyDayFollowUp(BaseModel):
+    deal_id: UUID
+    deal_title: str
+    at: datetime
+    action: Action
+    comment: str | None
+
+
+class MyDayOut(BaseModel):
+    tasks: list[MyDayTask]
+    follow_ups: list[MyDayFollowUp]
+
+
 class DealOut(Output):
     id: UUID
     workspace_id: UUID
