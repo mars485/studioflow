@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -8,11 +9,11 @@ from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import current_user, workspace_access, workspace_admin
 from app.api.v1.schemas import (ClientCreate, ClientOut, ClientUpdate, ContactCreate, ContactOut, ContactUpdate, DealCreate, DealOut,
-                                DealUpdate, DealActivityCreate, DealActivityOut, FollowUp,
+                                DealUpdate, DealActivityCreate, DealActivityOut, DealTaskCreate, DealTaskOut, DealTaskUpdate, FollowUp,
                                 FollowUpComplete, FollowUpCompleteResult, FollowUpCompletionOut, PipelineCreate, PipelineOut, PipelineUpdate,
                                 StageCreate, StageOrder, StageOut, StageUpdate)
 from app.core.database import get_db
-from app.models import Client, Contact, ContactClient, Deal, DealActivity, FollowUpCompletion, Pipeline, PipelineStage, User, Workspace, WorkspaceMember
+from app.models import Client, Contact, ContactClient, Deal, DealActivity, DealTask, FollowUpCompletion, Pipeline, PipelineStage, User, Workspace, WorkspaceMember
 from app.models.entities import StageType
 
 router = APIRouter(tags=["CRM"])
@@ -526,6 +527,68 @@ async def update_deal(deal_id: UUID, data: DealUpdate, workspace_id: UUID = Depe
 async def delete_deal(deal_id: UUID, workspace_id: UUID = Depends(workspace_admin),
                       db: AsyncSession = Depends(get_db)):
     await db.delete(await find_deal(db, workspace_id, deal_id))
+    await db.commit()
+    return Response(status_code=204)
+
+
+@scoped.get("/deals/{deal_id}/tasks", response_model=list[DealTaskOut])
+async def deal_tasks(deal_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                     db: AsyncSession = Depends(get_db)):
+    await find_deal(db, workspace_id, deal_id)
+    return (await db.scalars(select(DealTask).where(DealTask.workspace_id == workspace_id,
+        DealTask.deal_id == deal_id).order_by(DealTask.status, DealTask.due_at, DealTask.created_at, DealTask.id))).all()
+
+
+@scoped.post("/deals/{deal_id}/tasks", response_model=DealTaskOut, status_code=201)
+async def create_deal_task(deal_id: UUID, data: DealTaskCreate,
+                           workspace_id: UUID = Depends(workspace_access), user: User = Depends(current_user),
+                           db: AsyncSession = Depends(get_db)):
+    await find_deal(db, workspace_id, deal_id)
+    await validate_responsible(db, workspace_id, data.assignee_user_id)
+    row = DealTask(workspace_id=workspace_id, deal_id=deal_id,
+        created_by_user_id=user.id, **data.model_dump())
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+async def find_deal_task(db: AsyncSession, workspace_id: UUID, deal_id: UUID, task_id: UUID,
+                         lock: bool = False) -> DealTask:
+    query = select(DealTask).where(DealTask.id == task_id, DealTask.workspace_id == workspace_id,
+        DealTask.deal_id == deal_id)
+    row = await db.scalar(query.with_for_update() if lock else query)
+    if row is None:
+        raise HTTPException(404, "Task not found")
+    return row
+
+
+@scoped.patch("/deals/{deal_id}/tasks/{task_id}", response_model=DealTaskOut)
+async def update_deal_task(deal_id: UUID, task_id: UUID, data: DealTaskUpdate,
+                           workspace_id: UUID = Depends(workspace_access), user: User = Depends(current_user),
+                           db: AsyncSession = Depends(get_db)):
+    row = await find_deal_task(db, workspace_id, deal_id, task_id, lock=True)
+    changes = data.model_dump(exclude_unset=True)
+    start_at = changes.get("start_at", row.start_at)
+    due_at = changes.get("due_at", row.due_at)
+    if start_at and due_at and start_at > due_at:
+        raise HTTPException(422, "Дата начала задачи не может быть позже крайнего срока")
+    if "assignee_user_id" in changes:
+        await validate_responsible(db, workspace_id, changes["assignee_user_id"])
+    if "status" in changes and changes["status"] != row.status:
+        row.completed_at = datetime.now(timezone.utc) if changes["status"] == "DONE" else None
+        row.completed_by_user_id = user.id if changes["status"] == "DONE" else None
+    for name, value in changes.items():
+        setattr(row, name, value)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+@scoped.delete("/deals/{deal_id}/tasks/{task_id}", status_code=204)
+async def delete_deal_task(deal_id: UUID, task_id: UUID,
+                           workspace_id: UUID = Depends(workspace_admin), db: AsyncSession = Depends(get_db)):
+    await db.delete(await find_deal_task(db, workspace_id, deal_id, task_id))
     await db.commit()
     return Response(status_code=204)
 

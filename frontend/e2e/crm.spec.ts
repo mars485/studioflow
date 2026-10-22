@@ -43,6 +43,12 @@ test('registration through follow-up survives reload', async ({page}) => {
   await expect(card).toBeVisible();
   await expect(card).toContainText('Ответственный: E2E');
   await card.click();
+  const dealDrawer = page.getByRole('dialog', {name: 'Карточка сделки'});
+  await dealDrawer.getByLabel('Название задачи').fill(`E2E задача ${stamp}`);
+  await dealDrawer.getByLabel('Исполнитель задачи').selectOption({index: 1});
+  await dealDrawer.getByLabel('Крайний срок').fill('2026-12-04T18:00');
+  await dealDrawer.getByRole('button', {name: 'Добавить задачу'}).click();
+  await expect(dealDrawer.getByText(`E2E задача ${stamp}`, {exact: true})).toBeVisible();
   await page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: `E2E client ${stamp}`}).click();
   const company = page.getByRole('dialog', {name: 'Компании'});
   await expect(company.getByRole('button', {name: deal})).toBeVisible();
@@ -79,6 +85,7 @@ test('registration through follow-up survives reload', async ({page}) => {
   await page.reload();
   await page.getByRole('article', {name: `Открыть ${deal}`}).click();
   await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByText('Сроки: 2026-10-23 — 2026-11-02')).toBeVisible();
+  await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByText(`E2E задача ${stamp}`, {exact: true})).toBeVisible();
   await page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: `E2E client ${stamp}`}).click();
   await expect(page.getByRole('dialog', {name: 'Компании'}).getByLabel('Рабочий телефон')).toHaveValue('+7 900 000-00-00');
   await page.getByRole('dialog', {name: 'Компании'}).getByRole('button', {name: 'Закрыть'}).click();

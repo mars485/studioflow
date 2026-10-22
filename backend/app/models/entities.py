@@ -165,6 +165,31 @@ class DealActivity(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class DealTask(Base):
+    __tablename__ = "deal_tasks"
+    __table_args__ = (
+        ForeignKeyConstraint(["workspace_id", "deal_id"], ["deals.workspace_id", "deals.id"], name="fk_deal_tasks_workspace_deal", ondelete="CASCADE"),
+        CheckConstraint("priority IN ('LOW', 'MEDIUM', 'HIGH')", name="ck_deal_tasks_priority"),
+        CheckConstraint("status IN ('OPEN', 'DONE')", name="ck_deal_tasks_status"),
+        CheckConstraint("start_at IS NULL OR due_at IS NULL OR start_at <= due_at", name="ck_deal_tasks_date_order"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    deal_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(Text)
+    priority: Mapped[str] = mapped_column(String(10), default="MEDIUM", server_default="MEDIUM")
+    status: Mapped[str] = mapped_column(String(10), default="OPEN", server_default="OPEN")
+    assignee_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    completed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class FollowUpCompletion(Base):
     __tablename__ = "follow_up_completions"
     __table_args__ = (

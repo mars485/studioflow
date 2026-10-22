@@ -26,6 +26,10 @@ export type Deal = {
 };
 export type DealInput = Pick<Deal, 'title' | 'client_id' | 'contact_id' | 'pipeline_id' | 'stage_id' | 'responsible_user_id' | 'amount' | 'contact_name' | 'source' | 'description' | 'start_date' | 'end_date'>;
 export type DealActivity = {id: string; deal_id: string; author_user_id: string | null; author_name: string; body: string; kind: 'NOTE' | 'STAGE_CHANGE'; created_at: string};
+export type DealTask = {id: string; workspace_id: string; deal_id: string; title: string; description: string | null;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH'; status: 'OPEN' | 'DONE'; assignee_user_id: string | null;
+  created_by_user_id: string | null; completed_by_user_id: string | null;
+  start_at: string | null; due_at: string | null; created_at: string; updated_at: string; completed_at: string | null};
 export type FollowUpCompletion = {id: string; deal_id: string; completed_by_user_id: string | null; completed_by_name: string; scheduled_at: string; action: Action; planned_comment: string | null; outcome_comment: string | null; completed_at: string};
 
 export async function request<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
