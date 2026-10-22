@@ -10,6 +10,24 @@ from app.models import Deal, Pipeline, PipelineStage, WorkspaceMember
 pytestmark = pytest.mark.asyncio
 
 
+async def test_deal_activity_is_persistent_and_workspace_scoped(crm):
+    http, base = crm["http"], crm["base"]
+    deal = (await http.post(base + "/deals", json=crm["payload"])).json()
+    path = base + "/deals/" + deal["id"] + "/activities"
+    assert (await http.post(path, json={"body": "  "})).status_code == 422
+    created = await http.post(path, json={"body": "  Позвонил клиенту  "})
+    assert created.status_code == 201, created.text
+    assert created.json()["body"] == "Позвонил клиенту"
+    assert created.json()["author_user_id"] == str(crm["user"].id)
+    assert [item["id"] for item in (await http.get(path)).json()] == [created.json()["id"]]
+    assert (await http.get(path + "?limit=1&offset=1")).json() == []
+    other = f'/api/v1/workspaces/{crm["spaces"][1].id}/deals/{deal["id"]}/activities'
+    assert (await http.get(other)).status_code == 404
+    assert (await http.post(other, json={"body": "Недопустимо"})).status_code == 404
+    assert (await http.delete(base + "/deals/" + deal["id"])).status_code == 204
+    assert (await http.get(path)).status_code == 404
+
+
 async def test_crud_and_follow_up_persist(crm):
     http, base = crm["http"], crm["base"]
     assert len((await http.get("/api/v1/workspaces")).json()) == 1

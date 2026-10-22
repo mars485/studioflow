@@ -96,6 +96,7 @@ class PipelineStage(Base):
 class Deal(Base, TimestampMixin):
     __tablename__ = "deals"
     __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_deals_workspace_id"),
         ForeignKeyConstraint(["workspace_id", "client_id"], ["clients.workspace_id", "clients.id"], name="fk_deals_workspace_client", ondelete="RESTRICT"),
         ForeignKeyConstraint(["workspace_id", "pipeline_id", "stage_id"], ["pipeline_stages.workspace_id", "pipeline_stages.pipeline_id", "pipeline_stages.id"], name="fk_deals_workspace_stage", ondelete="RESTRICT"),
         CheckConstraint("amount >= 0", name="ck_deals_amount"),
@@ -116,4 +117,19 @@ class Deal(Base, TimestampMixin):
     follow_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     follow_up_action: Mapped[str | None] = mapped_column(String(20))
     follow_up_comment: Mapped[str | None] = mapped_column(Text)
+
+
+class DealActivity(Base):
+    __tablename__ = "deal_activities"
+    __table_args__ = (
+        ForeignKeyConstraint(["workspace_id", "deal_id"], ["deals.workspace_id", "deals.id"], name="fk_activities_workspace_deal", ondelete="CASCADE"),
+        CheckConstraint("length(trim(body)) > 0", name="ck_activities_body_not_blank"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    deal_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    author_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    author_name: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
