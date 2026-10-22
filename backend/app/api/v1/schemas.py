@@ -53,6 +53,7 @@ class DealCreate(BaseModel):
     client_id: UUID
     pipeline_id: UUID
     stage_id: UUID
+    responsible_user_id: UUID | None = None
     amount: Money = Decimal("0")
     contact_name: str | None = Field(default=None, max_length=255)
     source: str | None = Field(default=None, max_length=100)
@@ -65,6 +66,7 @@ class DealUpdate(BaseModel):
     client_id: UUID | None = None
     pipeline_id: UUID | None = None
     stage_id: UUID | None = None
+    responsible_user_id: UUID | None = None
     amount: Money | None = None
     contact_name: str | None = Field(default=None, max_length=255)
     source: str | None = Field(default=None, max_length=100)
@@ -124,6 +126,7 @@ class DealOut(Output):
     client_id: UUID
     pipeline_id: UUID
     stage_id: UUID
+    responsible_user_id: UUID | None
     amount: Decimal
     currency: str
     contact_name: str | None

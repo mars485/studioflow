@@ -3,14 +3,14 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, EmailStr, StringConstraints, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import current_user, workspace_access, workspace_admin
 from app.api.v1.schemas import WorkspaceOut
 from app.core.database import get_db
-from app.models import Pipeline, PipelineStage, User, Workspace, WorkspaceMember
+from app.models import Deal, Pipeline, PipelineStage, User, Workspace, WorkspaceMember
 from app.models.entities import StageType
 
 router = APIRouter(prefix="/workspaces", tags=["Workspaces"])
@@ -160,6 +160,8 @@ async def remove_member(member_id: uuid.UUID, workspace_id: uuid.UUID = Depends(
     actor = await lock_membership(db, workspace_id, user.id)
     member = await member_to_change(db, workspace_id, member_id, None)
     authorize_role(actor, member.role, None)
+    await db.execute(update(Deal).where(Deal.workspace_id == workspace_id,
+                                        Deal.responsible_user_id == member.user_id).values(responsible_user_id=None))
     await db.delete(member)
     await db.commit()
     return Response(status_code=204)
