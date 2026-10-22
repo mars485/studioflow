@@ -8,7 +8,7 @@ const deal: Deal = {id: 'd1', workspace_id: 'w1', title: 'Сайт клиент�
   follow_up_at: '2026-12-01T11:30:00Z', follow_up_action: 'proposal', follow_up_comment: 'Отправить КП',
   created_at: '2026-09-01T10:00:00Z', updated_at: '2026-09-01T10:00:00Z'};
 let stored: Deal[];
-let notes: {id: string; workspace_id: string; deal_id: string; author_user_id: string; author_name: string; body: string; created_at: string}[];
+let notes: {id: string; workspace_id: string; deal_id: string; author_user_id: string; author_name: string; body: string; kind: 'NOTE' | 'STAGE_CHANGE'; created_at: string}[];
 let failMutation: boolean;
 let failLoad: boolean;
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -26,7 +26,7 @@ beforeEach(() => {
     if (url.includes('/deals?')) return response(stored);
     if (url.endsWith('/activities')) {
       if (method === 'GET') return response(notes);
-      const note = {id: `n${notes.length + 1}`, workspace_id: 'w1', deal_id: 'd1', author_user_id: 'u1', author_name: 'Менеджер', body: data.body, created_at: '2026-10-23T10:00:00Z'};
+      const note = {id: `n${notes.length + 1}`, workspace_id: 'w1', deal_id: 'd1', author_user_id: 'u1', author_name: 'Менеджер', body: data.body, kind: 'NOTE' as const, created_at: '2026-10-23T10:00:00Z'};
       notes.unshift(note);
       return response(note, 201);
     }

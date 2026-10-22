@@ -26,6 +26,7 @@ test('registration through follow-up survives reload', async ({page}) => {
   await expect(stage.getByRole('article', {name: `Открыть ${deal}`})).toBeVisible();
   await card.click();
   const drawer = page.getByRole('dialog', {name: 'Карточка сделки'});
+  await expect(drawer.getByText(/Стадия: .* → /)).toBeVisible();
   await drawer.getByLabel('Дата и время').fill('2026-12-01T16:30');
   await drawer.getByLabel('Что сделать').selectOption('call');
   await drawer.getByLabel('Комментарий').fill('E2E follow-up');
