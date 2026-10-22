@@ -52,6 +52,27 @@ beforeEach(() => {
 afterEach(() => {cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks();});
 
 describe('CRM persistence', () => {
+  it('filters deals with today, overdue and missing follow-ups', async () => {
+    const today = new Date(); today.setHours(12, 0, 0, 0);
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+    stored = [
+      {...deal, id: 'today', title: 'Сегодня', follow_up_at: today.toISOString()},
+      {...deal, id: 'late', title: 'Просрочено', follow_up_at: yesterday.toISOString()},
+      {...deal, id: 'empty', title: 'Без дела', follow_up_at: null, follow_up_action: null, follow_up_comment: null},
+    ];
+    render(<CRM/>);
+    await screen.findByRole('article', {name: 'Открыть Сегодня'});
+    fireEvent.click(screen.getByRole('button', {name: /Follow-up сегодня/}));
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(screen.getByRole('article', {name: 'Открыть Сегодня'})).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', {name: /Просрочены/}));
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(screen.getByRole('article', {name: 'Открыть Просрочено'})).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', {name: /Нет дел/}));
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(screen.getByRole('article', {name: 'Открыть Без дела'})).toBeTruthy();
+  });
+
   it('loads from the API and keeps a card in place when drag-and-drop fails', async () => {
     render(<CRM/>);
     expect(screen.getByRole('status').textContent).toContain('Загрузка');

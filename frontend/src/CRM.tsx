@@ -161,7 +161,7 @@ export default function CRM() {
   const [formError, setFormError] = useState('');
   const [reload, setReload] = useState(0);
   const [search, setSearch] = useState('');
-  const [todayOnly, setTodayOnly] = useState(false);
+  const [followFilter, setFollowFilter] = useState<'all' | 'today' | 'overdue' | 'none'>('all');
   const base = `/workspaces/${workspaceId}`;
 
   useEffect(() => {
@@ -218,9 +218,14 @@ export default function CRM() {
   };
   const pipeline = pipelines.find(p => p.id === pipelineId);
   const selected = items.find(d => d.id === selectedId);
-  const isToday = (deal: Deal) => !!deal.follow_up_at && new Date(deal.follow_up_at).toDateString() === new Date().toDateString();
+  const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+  const startOfTomorrow = new Date(startOfToday); startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
+  const isToday = (deal: Deal) => !!deal.follow_up_at && new Date(deal.follow_up_at) >= startOfToday && new Date(deal.follow_up_at) < startOfTomorrow;
+  const isOverdue = (deal: Deal) => !!deal.follow_up_at && new Date(deal.follow_up_at) < startOfToday;
   const pipelineItems = items.filter(d => d.pipeline_id === pipelineId);
-  const filtered = pipelineItems.filter(d => (!todayOnly || isToday(d)) &&
+  const filtered = pipelineItems.filter(d => (followFilter === 'all' ||
+    (followFilter === 'today' && isToday(d)) || (followFilter === 'overdue' && isOverdue(d)) ||
+    (followFilter === 'none' && !d.follow_up_at)) &&
     `${d.title} ${clients.find(c => c.id === d.client_id)?.name || ''} ${d.contact_name || ''}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
   return <>
     <header><div><h1>CRM · Сделки</h1><p>Управление продажами и следующими контактами</p></div><button className="primary" disabled={loading || busy || !pipeline?.stages.length} onClick={() => {setFormError(''); setEditing('new');}}><Plus size={18}/>Новая сделка</button></header>
@@ -228,7 +233,9 @@ export default function CRM() {
       <select aria-label="Рабочее пространство" disabled={loading || busy} value={workspaceId} onChange={e => setWorkspaceId(e.target.value)}>{workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
       <select aria-label="Воронка" disabled={loading || busy} value={pipelineId} onChange={e => setPipelineId(e.target.value)}>{pipelines.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
       <div className="search"><Search size={17}/><input aria-label="Поиск сделок" placeholder="Поиск по сделкам и клиентам" value={search} onChange={e => setSearch(e.target.value)}/></div>
-      <button className="filter" aria-pressed={todayOnly} onClick={() => setTodayOnly(!todayOnly)}><CalendarClock size={17}/>Follow-up сегодня <b>{pipelineItems.filter(isToday).length}</b></button>
+      <button className="filter" aria-pressed={followFilter === 'today'} onClick={() => setFollowFilter(followFilter === 'today' ? 'all' : 'today')}><CalendarClock size={17}/>Follow-up сегодня <b>{pipelineItems.filter(isToday).length}</b></button>
+      <button className="filter" aria-pressed={followFilter === 'overdue'} onClick={() => setFollowFilter(followFilter === 'overdue' ? 'all' : 'overdue')}>Просрочены <b>{pipelineItems.filter(isOverdue).length}</b></button>
+      <button className="filter" aria-pressed={followFilter === 'none'} onClick={() => setFollowFilter(followFilter === 'none' ? 'all' : 'none')}>Нет дел <b>{pipelineItems.filter(d => !d.follow_up_at).length}</b></button>
     </div>
     {error && <div role="alert" className="errorMessage">{error} <button disabled={busy || loading} onClick={() => setReload(n => n + 1)}>Повторить загрузку</button></div>}
     {loading ? <p role="status">Загрузка CRM…</p> : !pipeline ? <p>Нет доступных воронок. Откройте «Настройки», чтобы создать студию, или попросите владельца добавить вас.</p> : <>
