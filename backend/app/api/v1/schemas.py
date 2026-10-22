@@ -85,6 +85,20 @@ class FollowUp(BaseModel):
     comment: str | None = Field(default=None, max_length=10000)
 
 
+class DealActivityCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    body: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=10000)]
+
+
+class DealActivityOut(Output):
+    id: UUID
+    deal_id: UUID
+    author_user_id: UUID | None
+    author_name: str
+    body: str
+    created_at: datetime
+
+
 class DealOut(Output):
     id: UUID
     workspace_id: UUID

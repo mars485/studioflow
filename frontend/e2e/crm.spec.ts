@@ -31,7 +31,11 @@ test('registration through follow-up survives reload', async ({page}) => {
   await drawer.getByLabel('Комментарий').fill('E2E follow-up');
   await drawer.getByRole('button', {name: 'Сохранить follow-up'}).click();
   await expect(drawer.getByRole('status')).toContainText('сохранён');
+  await drawer.getByLabel('Новая заметка').fill('E2E разговор с клиентом');
+  await drawer.getByRole('button', {name: 'Добавить в историю'}).click();
+  await expect(drawer.getByText('E2E разговор с клиентом')).toBeVisible();
   await page.reload();
   await page.getByRole('article', {name: `Открыть ${deal}`}).click();
   await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByLabel('Комментарий')).toHaveValue('E2E follow-up');
+  await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByText('E2E разговор с клиентом')).toBeVisible();
 });

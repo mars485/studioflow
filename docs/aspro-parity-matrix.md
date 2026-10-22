@@ -10,7 +10,7 @@
 | CRM | Сделка: CRUD и Kanban | UI: «Сделки»; StudioFlow код | P0 | `backend/app/api/v1/crm.py` | `frontend/src/CRM.tsx` | `backend/tests/test_crm.py`, `frontend/src/CRM.test.tsx`, `frontend/e2e/crm.spec.ts` | TESTED |
 | CRM | Следующее действие на сделке | StudioFlow код | P0 | `crm.py` | `CRM.tsx` | `test_crm.py`, `CRM.test.tsx`, `crm.spec.ts` | TESTED |
 | CRM | Поля создания сделки: название, сумма, источник, даты, ответственный, наблюдатели, клиент, описание, файлы, теги, пользовательские поля | REA и UI: форма новой сделки, `7e96.aspro.cloud` | P1 | Частично | Частично | Частично | SPECIFIED |
-| CRM | Лента активностей и история стадий | `docs/REFERENCES.md` | P1 | Нет | Нет | Нет | NOT_IMPLEMENTED |
+| CRM | Лента активностей и история стадий | `docs/REFERENCES.md`; заметки реализованы, история стадий ещё нет | P1 | Заметки: модель, миграция, scoped API | Заметки в карточке | Frontend 15/15; backend 25/25; E2E 1/1 | IN_PROGRESS |
 | CRM | Контакты и карточка компании | `docs/REFERENCES.md` | P1 | Частично | Частично | Частично | NOT_IMPLEMENTED |
 | CRM | Настраиваемые воронки и стадии | `docs/REFERENCES.md` | P1 | Чтение | Чтение | Частично | NOT_IMPLEMENTED |
 | CRM | Теги, пользовательские поля, файлы, наблюдатели | UI: форма новой сделки | P1 | Нет | Нет | Нет | SPECIFIED |

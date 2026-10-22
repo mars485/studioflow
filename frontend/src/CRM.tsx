@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState, type FormEvent} from 'react';
 import {CalendarClock, Plus, Search, X} from 'lucide-react';
-import {type Action, type Client, type Deal, type DealInput, type Pipeline, type Workspace,
+import {type Action, type Client, type Deal, type DealActivity, type DealInput, type Pipeline, type Workspace,
   errorText, loadDeals, localDateTime, money, request} from './api';
 
 const actions: Record<Action, string> = {call: 'Позвонить', message: 'Написать в WhatsApp', proposal: 'Отправить КП', decision: 'Уточнить решение'};
@@ -42,8 +42,8 @@ function DealForm({deal, clients, pipelines, initialPipeline, busy, error, onClo
   </div>;
 }
 
-function DealDrawer({deal, client, stage, busy, canDelete, onClose, onEdit, onDelete, onFollow}: {
-  deal: Deal; client?: Client; stage?: string; busy: boolean; canDelete: boolean;
+function DealDrawer({deal, client, stage, base, busy, canDelete, onClose, onEdit, onDelete, onFollow}: {
+  deal: Deal; client?: Client; stage?: string; base: string; busy: boolean; canDelete: boolean;
   onClose: () => void; onEdit: () => void; onDelete: () => Promise<void>;
   onFollow: (value: {at: string; action: Action; comment: string} | null) => Promise<void>;
 }) {
@@ -52,6 +52,30 @@ function DealDrawer({deal, client, stage, busy, canDelete, onClose, onEdit, onDe
   const [comment, setComment] = useState(deal.follow_up_comment || '');
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  const [activities, setActivities] = useState<DealActivity[]>([]);
+  const [activityBody, setActivityBody] = useState('');
+  const [activityLoading, setActivityLoading] = useState(true);
+  const [activityBusy, setActivityBusy] = useState(false);
+  const [activityError, setActivityError] = useState('');
+  const [activityReload, setActivityReload] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setActivityLoading(true); setActivityError('');
+    request<DealActivity[]>(`${base}/deals/${deal.id}/activities`, 'GET', undefined, controller.signal)
+      .then(rows => {if (!controller.signal.aborted) {setActivities(rows); setActivityLoading(false);}})
+      .catch(e => {if (!controller.signal.aborted) {setActivityError(errorText(e)); setActivityLoading(false);}});
+    return () => controller.abort();
+  }, [base, deal.id, activityReload]);
+  const addActivity = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!activityBody.trim() || activityBusy) return;
+    setActivityBusy(true); setActivityError('');
+    try {
+      const row = await request<DealActivity>(`${base}/deals/${deal.id}/activities`, 'POST', {body: activityBody.trim()});
+      setActivities(previous => [row, ...previous]); setActivityBody('');
+    } catch (e) {setActivityError(errorText(e));}
+    finally {setActivityBusy(false);}
+  };
   const save = async (clear = false) => {
     setError(''); setStatus('');
     try {
@@ -76,6 +100,12 @@ function DealDrawer({deal, client, stage, busy, canDelete, onClose, onEdit, onDe
       </fieldset>
     </form>
     {error && <p role="alert" className="errorMessage">{error}</p>}{status && <p role="status">{status}</p>}
+    <section className="drawerSection activitySection"><h3>История действий</h3>
+      {activityLoading ? <p role="status">Загрузка истории…</p> : activityError && !activities.length ? <p role="alert">{activityError} <button type="button" onClick={() => setActivityReload(n => n + 1)}>Повторить</button></p> : !activities.length ? <p className="muted">Записей пока нет.</p> :
+        <ol className="activityList">{activities.map(item => <li key={item.id}><strong>{item.author_name}</strong> · <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString('ru-RU')}</time><p>{item.body}</p></li>)}</ol>}
+      <form onSubmit={e => void addActivity(e)}><label>Новая заметка<textarea value={activityBody} maxLength={10000} onChange={e => setActivityBody(e.target.value)}/></label><button disabled={activityBusy || !activityBody.trim()}>{activityBusy ? 'Сохранение…' : 'Добавить в историю'}</button></form>
+      {activityError && activities.length > 0 && <p role="alert" className="errorMessage">{activityError}</p>}
+    </section>
     <section className="drawerSection"><h3>Даты сделки</h3><p>Создана: {new Date(deal.created_at).toLocaleString('ru-RU')}</p><p>Обновлена: {new Date(deal.updated_at).toLocaleString('ru-RU')}</p></section>
   </aside></div>;
 }
@@ -178,7 +208,7 @@ export default function CRM() {
         </section>;})}
       </div>
     </>}
-    {selected && <DealDrawer key={selected.id} canDelete={['OWNER', 'ADMIN'].includes(workspaces.find(w => w.id === workspaceId)?.role || '')} deal={selected} client={clients.find(c => c.id === selected.client_id)} stage={pipelines.flatMap(p => p.stages).find(s => s.id === selected.stage_id)?.name} busy={busy}
+    {selected && <DealDrawer key={selected.id} base={base} canDelete={['OWNER', 'ADMIN'].includes(workspaces.find(w => w.id === workspaceId)?.role || '')} deal={selected} client={clients.find(c => c.id === selected.client_id)} stage={pipelines.flatMap(p => p.stages).find(s => s.id === selected.stage_id)?.name} busy={busy}
       onClose={() => setSelectedId(null)} onEdit={() => {setFormError(''); setEditing(selected);}}
       onDelete={() => mutate(async () => {await request(`${base}/deals/${selected.id}`, 'DELETE'); setItems(prev => prev.filter(d => d.id !== selected.id)); setSelectedId(null);})}
       onFollow={value => mutate(async () => replace(await request<Deal>(`${base}/deals/${selected.id}/follow-up`, value ? 'PUT' : 'DELETE', value || undefined)))}/>}

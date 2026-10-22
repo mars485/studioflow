@@ -5,11 +5,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.dependencies import workspace_access, workspace_admin
+from app.api.dependencies import current_user, workspace_access, workspace_admin
 from app.api.v1.schemas import (ClientCreate, ClientOut, DealCreate, DealOut,
-                                DealUpdate, FollowUp, PipelineOut)
+                                DealUpdate, DealActivityCreate, DealActivityOut, FollowUp, PipelineOut)
 from app.core.database import get_db
-from app.models import Client, Deal, Pipeline, PipelineStage, Workspace
+from app.models import Client, Deal, DealActivity, Pipeline, PipelineStage, User, Workspace
 
 router = APIRouter(tags=["CRM"])
 scoped = APIRouter(prefix="/workspaces/{workspace_id}")
@@ -123,6 +123,29 @@ async def clear_follow_up(deal_id: UUID, workspace_id: UUID = Depends(workspace_
                           db: AsyncSession = Depends(get_db)):
     row = await find_deal(db, workspace_id, deal_id)
     row.follow_up_at = row.follow_up_action = row.follow_up_comment = None
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+@scoped.get("/deals/{deal_id}/activities", response_model=list[DealActivityOut])
+async def deal_activities(deal_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                          db: AsyncSession = Depends(get_db), limit: int = Query(100, ge=1, le=500),
+                          offset: int = Query(0, ge=0)):
+    await find_deal(db, workspace_id, deal_id)
+    return (await db.scalars(select(DealActivity).where(
+        DealActivity.workspace_id == workspace_id, DealActivity.deal_id == deal_id
+    ).order_by(DealActivity.created_at.desc(), DealActivity.id.desc()).limit(limit).offset(offset))).all()
+
+
+@scoped.post("/deals/{deal_id}/activities", response_model=DealActivityOut, status_code=201)
+async def add_deal_activity(deal_id: UUID, data: DealActivityCreate,
+                            workspace_id: UUID = Depends(workspace_access),
+                            user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    await find_deal(db, workspace_id, deal_id)
+    row = DealActivity(workspace_id=workspace_id, deal_id=deal_id, author_user_id=user.id,
+                       author_name=" ".join(filter(None, (user.first_name, user.last_name))), body=data.body)
+    db.add(row)
     await db.commit()
     await db.refresh(row)
     return row

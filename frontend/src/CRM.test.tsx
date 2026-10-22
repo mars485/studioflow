@@ -8,12 +8,13 @@ const deal: Deal = {id: 'd1', workspace_id: 'w1', title: 'Сайт клиент�
   follow_up_at: '2026-12-01T11:30:00Z', follow_up_action: 'proposal', follow_up_comment: 'Отправить КП',
   created_at: '2026-09-01T10:00:00Z', updated_at: '2026-09-01T10:00:00Z'};
 let stored: Deal[];
+let notes: {id: string; workspace_id: string; deal_id: string; author_user_id: string; author_name: string; body: string; created_at: string}[];
 let failMutation: boolean;
 let failLoad: boolean;
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
-  stored = [{...deal}]; failMutation = false; failLoad = false;
+  stored = [{...deal}]; notes = []; failMutation = false; failLoad = false;
   fetchMock = vi.fn(async (url: string, options: RequestInit = {}) => {
     const method = options.method || 'GET';
     const data = options.body ? JSON.parse(String(options.body)) : null;
@@ -23,6 +24,12 @@ beforeEach(() => {
     if (url.endsWith('/pipelines')) return response([{id: 'p1', name: 'Продажи', is_default: true, stages: [{id: 's1', name: 'Новый лид', position: 0}, {id: 's2', name: 'Контакт', position: 1}]}]);
     if (url.endsWith('/clients')) return response([{id: 'c1', name: 'Клиент'}]);
     if (url.includes('/deals?')) return response(stored);
+    if (url.endsWith('/activities')) {
+      if (method === 'GET') return response(notes);
+      const note = {id: `n${notes.length + 1}`, workspace_id: 'w1', deal_id: 'd1', author_user_id: 'u1', author_name: 'Менеджер', body: data.body, created_at: '2026-10-23T10:00:00Z'};
+      notes.unshift(note);
+      return response(note, 201);
+    }
     if (url.endsWith('/follow-up')) {
       stored[0] = {...stored[0], follow_up_at: data?.at || null, follow_up_action: data?.action || null, follow_up_comment: data?.comment || null};
       return response(stored[0]);
@@ -65,6 +72,31 @@ describe('CRM persistence', () => {
     fireEvent.click(screen.getByRole('article', {name: 'Открыть Сайт клиента'}));
     expect((screen.getByLabelText('Комментарий') as HTMLTextAreaElement).value).toBe('Обсудить договор');
     expect((screen.getByLabelText('Дата и время') as HTMLInputElement).value).toBe(localDateTime(stored[0].follow_up_at));
+  });
+
+  it('saves a deal note and reloads its history', async () => {
+    render(<CRM/>);
+    fireEvent.click(await screen.findByRole('article', {name: 'Открыть Сайт клиента'}));
+    await screen.findByText('Записей пока нет.');
+    fireEvent.change(screen.getByLabelText('Новая заметка'), {target: {value: 'Позвонил клиенту'}});
+    fireEvent.click(screen.getByRole('button', {name: 'Добавить в историю'}));
+    await screen.findByText('Позвонил клиенту');
+    expect(notes).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', {name: 'Закрыть'}));
+    fireEvent.click(screen.getByRole('article', {name: 'Открыть Сайт клиента'}));
+    expect(await screen.findByText('Позвонил клиенту')).toBeTruthy();
+  });
+
+  it('keeps a note draft when saving fails', async () => {
+    render(<CRM/>);
+    fireEvent.click(await screen.findByRole('article', {name: 'Открыть Сайт клиента'}));
+    await screen.findByText('Записей пока нет.');
+    failMutation = true;
+    fireEvent.change(screen.getByLabelText('Новая заметка'), {target: {value: 'Перезвонить завтра'}});
+    fireEvent.click(screen.getByRole('button', {name: 'Добавить в историю'}));
+    await screen.findByRole('alert');
+    expect((screen.getByLabelText('Новая заметка') as HTMLTextAreaElement).value).toBe('Перезвонить завтра');
+    expect(notes).toHaveLength(0);
   });
 
   it('keeps the follow-up draft when the server rejects a save', async () => {
