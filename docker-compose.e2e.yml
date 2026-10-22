@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: studioflow_e2e
+      POSTGRES_USER: studioflow_e2e
+      POSTGRES_PASSWORD: local_test_only
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studioflow_e2e -d studioflow_e2e"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://studioflow_e2e:local_test_only@db:5432/studioflow_e2e
+      ALLOWED_ORIGINS: '["http://frontend:5173"]'
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+  frontend:
+    build: ./frontend
+    environment:
+      API_PROXY_TARGET: http://api:8000
+    depends_on:
+      - api
+    command: npm run dev -- --host 0.0.0.0
+  e2e:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.e2e
+    environment:
+      PLAYWRIGHT_BASE_URL: http://frontend:5173
+    depends_on:
+      - frontend
+    command: npx playwright test
