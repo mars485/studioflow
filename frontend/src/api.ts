@@ -13,12 +13,12 @@ export type Pipeline = {id: string; name: string; is_default: boolean; stages: S
 export type Action = 'call' | 'message' | 'proposal' | 'decision';
 export type Deal = {
   id: string; workspace_id: string; title: string; client_id: string;
-  pipeline_id: string; stage_id: string; amount: string; currency: string;
+  pipeline_id: string; stage_id: string; responsible_user_id: string | null; amount: string; currency: string;
   contact_name: string | null; source: string | null; description: string | null;
   follow_up_at: string | null; follow_up_action: Action | null; follow_up_comment: string | null;
   created_at: string; updated_at: string;
 };
-export type DealInput = Pick<Deal, 'title' | 'client_id' | 'pipeline_id' | 'stage_id' | 'amount' | 'contact_name' | 'source' | 'description'>;
+export type DealInput = Pick<Deal, 'title' | 'client_id' | 'pipeline_id' | 'stage_id' | 'responsible_user_id' | 'amount' | 'contact_name' | 'source' | 'description'>;
 export type DealActivity = {id: string; deal_id: string; author_user_id: string | null; author_name: string; body: string; kind: 'NOTE' | 'STAGE_CHANGE'; created_at: string};
 export type FollowUpCompletion = {id: string; deal_id: string; completed_by_user_id: string | null; completed_by_name: string; scheduled_at: string; action: Action; planned_comment: string | null; outcome_comment: string | null; completed_at: string};
 

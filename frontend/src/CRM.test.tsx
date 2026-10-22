@@ -4,7 +4,7 @@ import CRM from './CRM';
 import {type Deal, type FollowUpCompletion, localDateTime} from './api';
 
 const deal: Deal = {id: 'd1', workspace_id: 'w1', title: 'Сайт клиента', client_id: 'c1', pipeline_id: 'p1', stage_id: 's1',
-  amount: '65000.25', currency: 'RUB', contact_name: 'Мария', source: 'Сайт', description: null,
+  responsible_user_id: null, amount: '65000.25', currency: 'RUB', contact_name: 'Мария', source: 'Сайт', description: null,
   follow_up_at: '2026-12-01T11:30:00Z', follow_up_action: 'proposal', follow_up_comment: 'Отправить КП',
   created_at: '2026-09-01T10:00:00Z', updated_at: '2026-09-01T10:00:00Z'};
 let stored: Deal[];
@@ -23,6 +23,7 @@ beforeEach(() => {
     if (failLoad || (method !== 'GET' && failMutation)) return response({detail: 'Server unavailable'}, 503);
     if (url === '/api/v1/workspaces') return response([{id: 'w1', name: 'Studio', role: 'OWNER', currency: 'RUB', timezone: 'Asia/Yekaterinburg'}]);
     if (url.endsWith('/pipelines')) return response([{id: 'p1', name: 'Продажи', is_default: true, stages: [{id: 's1', name: 'Новый лид', position: 0}, {id: 's2', name: 'Контакт', position: 1}]}]);
+    if (url.endsWith('/members')) return response([{id: 'm1', user_id: 'u1', email: 'manager@example.com', first_name: 'Менеджер', role: 'MANAGER'}]);
     if (url.endsWith('/clients')) return response([{id: 'c1', name: 'Клиент'}]);
     if (url.includes('/deals?')) return response(stored);
     if (url.endsWith('/follow-up/completions')) return response(completed);
@@ -148,9 +149,11 @@ describe('CRM persistence', () => {
     fireEvent.click(screen.getByRole('button', {name: 'Новая сделка'}));
     fireEvent.change(screen.getByLabelText('Название сделки'), {target: {value: 'Новый сайт'}});
     fireEvent.change(screen.getByLabelText('Компания / клиент'), {target: {value: 'c1'}});
+    fireEvent.change(screen.getByLabelText('Ответственный'), {target: {value: 'u1'}});
     fireEvent.click(screen.getByRole('button', {name: 'Сохранить сделку'}));
     await screen.findByRole('article', {name: 'Открыть Новый сайт'});
     expect(stored).toHaveLength(2);
+    expect(stored[1].responsible_user_id).toBe('u1');
     fireEvent.click(screen.getByRole('article', {name: 'Открыть Сайт клиента'}));
     fireEvent.click(screen.getByRole('button', {name: 'Редактировать'}));
     fireEvent.change(screen.getByLabelText('Название сделки'), {target: {value: 'Обновлённый сайт'}});

@@ -10,7 +10,7 @@ from app.api.v1.schemas import (ClientCreate, ClientOut, DealCreate, DealOut,
                                 DealUpdate, DealActivityCreate, DealActivityOut, FollowUp,
                                 FollowUpComplete, FollowUpCompleteResult, FollowUpCompletionOut, PipelineOut)
 from app.core.database import get_db
-from app.models import Client, Deal, DealActivity, FollowUpCompletion, Pipeline, PipelineStage, User, Workspace
+from app.models import Client, Deal, DealActivity, FollowUpCompletion, Pipeline, PipelineStage, User, Workspace, WorkspaceMember
 
 router = APIRouter(tags=["CRM"])
 scoped = APIRouter(prefix="/workspaces/{workspace_id}")
@@ -66,6 +66,16 @@ async def validate_relations(db: AsyncSession, workspace_id: UUID, client_id: UU
         raise HTTPException(422, "Client, pipeline and stage must belong to this workspace and stage to the active pipeline")
 
 
+async def validate_responsible(db: AsyncSession, workspace_id: UUID, responsible_user_id: UUID | None):
+    if responsible_user_id is None:
+        return
+    member = await db.scalar(select(WorkspaceMember.user_id).join(User, User.id == WorkspaceMember.user_id).where(
+        WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.user_id == responsible_user_id,
+        User.is_active.is_(True)).with_for_update(of=WorkspaceMember))
+    if member is None:
+        raise HTTPException(422, "Ответственный должен быть активным участником студии")
+
+
 @scoped.get("/deals", response_model=list[DealOut])
 async def deals(workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db),
                 pipeline_id: UUID | None = None, limit: int = Query(100, ge=1, le=500),
@@ -80,6 +90,7 @@ async def deals(workspace_id: UUID = Depends(workspace_access), db: AsyncSession
 async def create_deal(data: DealCreate, workspace_id: UUID = Depends(workspace_access),
                       db: AsyncSession = Depends(get_db)):
     await validate_relations(db, workspace_id, data.client_id, data.pipeline_id, data.stage_id)
+    await validate_responsible(db, workspace_id, data.responsible_user_id)
     workspace = await db.get(Workspace, workspace_id)
     row = Deal(workspace_id=workspace_id, currency=workspace.currency, **data.model_dump())
     db.add(row)
@@ -101,6 +112,7 @@ async def update_deal(deal_id: UUID, data: DealUpdate, workspace_id: UUID = Depe
     changes = data.model_dump(exclude_unset=True)
     await validate_relations(db, workspace_id, changes.get("client_id", row.client_id),
                              changes.get("pipeline_id", row.pipeline_id), changes.get("stage_id", row.stage_id))
+    await validate_responsible(db, workspace_id, changes.get("responsible_user_id", row.responsible_user_id))
     next_stage_id = changes.get("stage_id", row.stage_id)
     if next_stage_id != row.stage_id:
         stages = (await db.scalars(select(PipelineStage).where(

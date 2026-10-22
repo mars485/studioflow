@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
-from app.models import Deal, Pipeline, PipelineStage, WorkspaceMember
+from app.models import Deal, Pipeline, PipelineStage, User, WorkspaceMember
 
 pytestmark = pytest.mark.asyncio
 
@@ -65,6 +65,25 @@ async def test_completed_follow_up_is_archived_once_and_workspace_scoped(crm):
     assert (await http.get(other + "/completions")).status_code == 404
     assert (await http.post(other + "/complete", json={})).status_code == 404
     assert (await http.delete(base + "/deals/" + deal["id"])).status_code == 204
+
+
+async def test_responsible_must_be_workspace_member_and_is_cleared_on_removal(crm):
+    http, base = crm["http"], crm["base"]
+    stranger = User(id=uuid4(), email=f"{uuid4()}@example.com", password_hash="unused", first_name="Other")
+    crm["db"].add(stranger)
+    await crm["db"].commit()
+    assert (await http.post(base + "/deals", json={**crm["payload"], "responsible_user_id": str(stranger.id)})).status_code == 422
+    member = WorkspaceMember(workspace_id=crm["spaces"][0].id, user_id=stranger.id, role="MANAGER")
+    crm["db"].add(member)
+    await crm["db"].commit()
+    created = await http.post(base + "/deals", json={**crm["payload"], "responsible_user_id": str(stranger.id)})
+    assert created.status_code == 201, created.text
+    path = base + "/deals/" + created.json()["id"]
+    assert created.json()["responsible_user_id"] == str(stranger.id)
+    assert (await http.patch(path, json={"responsible_user_id": str(uuid4())})).status_code == 422
+    assert (await http.get(path)).json()["responsible_user_id"] == str(stranger.id)
+    assert (await http.delete(base + "/members/" + str(member.id))).status_code == 204
+    assert (await http.get(path)).json()["responsible_user_id"] is None
 
 
 async def test_crud_and_follow_up_persist(crm):

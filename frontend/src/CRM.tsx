@@ -1,12 +1,12 @@
 import {useEffect, useRef, useState, type FormEvent} from 'react';
 import {CalendarClock, Plus, Search, X} from 'lucide-react';
-import {type Action, type Client, type Deal, type DealActivity, type DealInput, type FollowUpCompletion, type Pipeline, type Workspace,
+import {type Action, type Client, type Deal, type DealActivity, type DealInput, type FollowUpCompletion, type Member, type Pipeline, type Workspace,
   errorText, loadDeals, localDateTime, money, request} from './api';
 
 const actions: Record<Action, string> = {call: 'Позвонить', message: 'Написать в WhatsApp', proposal: 'Отправить КП', decision: 'Уточнить решение'};
 
-function DealForm({deal, clients, pipelines, initialPipeline, busy, error, onClose, onSave}: {
-  deal?: Deal; clients: Client[]; pipelines: Pipeline[]; initialPipeline: string;
+function DealForm({deal, clients, members, pipelines, initialPipeline, busy, error, onClose, onSave}: {
+  deal?: Deal; clients: Client[]; members: Member[]; pipelines: Pipeline[]; initialPipeline: string;
   busy: boolean; error: string; onClose: () => void;
   onSave: (data: DealInput, newClient: string) => Promise<void>;
 }) {
@@ -19,6 +19,7 @@ function DealForm({deal, clients, pipelines, initialPipeline, busy, error, onClo
     const form = new FormData(event.currentTarget);
     void onSave({title: String(form.get('title')).trim(), client_id: clientId, pipeline_id: pipelineId,
       stage_id: stageId, amount: String(form.get('amount') || '0'),
+      responsible_user_id: String(form.get('responsible') || '') || null,
       contact_name: String(form.get('contact') || ''), source: String(form.get('source') || ''),
       description: String(form.get('description') || '')}, String(form.get('newClient') || '').trim());
   };
@@ -34,6 +35,7 @@ function DealForm({deal, clients, pipelines, initialPipeline, busy, error, onClo
         <label>Источник<input name="source" list="sources" defaultValue={deal?.source || ''} maxLength={100}/><datalist id="sources">{['2ГИС', 'WhatsApp', 'Сайт', 'Рекомендация', 'Холодный'].map(s => <option key={s}>{s}</option>)}</datalist></label>
         <label>Воронка<select value={pipelineId} onChange={e => {setPipelineId(e.target.value); setStageId(pipelines.find(p => p.id === e.target.value)?.stages[0]?.id || '');}}>{pipelines.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
         <label>Стадия<select required value={stageId} onChange={e => setStageId(e.target.value)}>{pipeline?.stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+        <label>Ответственный<select name="responsible" defaultValue={deal?.responsible_user_id || ''}><option value="">Не назначен</option>{members.map(member => <option key={member.user_id} value={member.user_id}>{member.first_name} · {member.email}</option>)}</select></label>
         <label>Описание<textarea name="description" maxLength={10000} defaultValue={deal?.description || ''}/></label>
         {error && <p role="alert" className="errorMessage">{error}</p>}
         <button className="saveFollow" disabled={!stageId}>{busy ? 'Сохранение…' : 'Сохранить сделку'}</button>
@@ -42,8 +44,8 @@ function DealForm({deal, clients, pipelines, initialPipeline, busy, error, onClo
   </div>;
 }
 
-function DealDrawer({deal, client, stage, base, busy, canDelete, onClose, onEdit, onDelete, onFollow, onComplete}: {
-  deal: Deal; client?: Client; stage?: string; base: string; busy: boolean; canDelete: boolean;
+function DealDrawer({deal, client, stage, responsibleName, base, busy, canDelete, onClose, onEdit, onDelete, onFollow, onComplete}: {
+  deal: Deal; client?: Client; stage?: string; responsibleName?: string; base: string; busy: boolean; canDelete: boolean;
   onClose: () => void; onEdit: () => void; onDelete: () => Promise<void>;
   onFollow: (value: {at: string; action: Action; comment: string} | null) => Promise<void>;
   onComplete: (outcome: string) => Promise<FollowUpCompletion>;
@@ -114,7 +116,7 @@ function DealDrawer({deal, client, stage, base, busy, canDelete, onClose, onEdit
     <div className="drawerHead"><div><small>Сделка</small><h2>{deal.title}</h2></div><button aria-label="Закрыть" disabled={busy} onClick={onClose}><X size={20}/></button></div>
     <div className="dealStatus"><span>{stage}</span><strong>{money(deal.amount, deal.currency)}</strong></div>
     <div className="quickActions"><button disabled={busy} onClick={onEdit}>Редактировать</button>{canDelete && <button disabled={busy} onClick={async () => {if (window.confirm('Удалить сделку?')) {try {await onDelete();} catch(e) {setError(errorText(e));}}}}>Удалить</button>}</div>
-    <section className="drawerSection"><h3>Контакт</h3><p>{client?.name}</p><p>{deal.contact_name || 'Контакт не указан'}</p><p>Источник: {deal.source || 'Не указан'}</p>{deal.description && <p>{deal.description}</p>}</section>
+    <section className="drawerSection"><h3>Контакт</h3><p>{client?.name}</p><p>{deal.contact_name || 'Контакт не указан'}</p><p>Ответственный: {responsibleName || 'Не назначен'}</p><p>Источник: {deal.source || 'Не указан'}</p>{deal.description && <p>{deal.description}</p>}</section>
     <form className="drawerSection followEditor" onSubmit={e => {e.preventDefault(); void save();}}>
       <h3>Следующий контакт</h3><p className="muted">Дата и время в часовом поясе вашего устройства.</p>
       <fieldset disabled={busy}>
@@ -148,6 +150,7 @@ export default function CRM() {
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [pipelineId, setPipelineId] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
   const [items, setItems] = useState<Deal[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Deal | 'new' | null>(null);
@@ -163,7 +166,7 @@ export default function CRM() {
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true); setError(''); setItems([]); setClients([]); setPipelines([]); setSelectedId(null); setEditing(null);
+    setLoading(true); setError(''); setItems([]); setClients([]); setMembers([]); setPipelines([]); setSelectedId(null); setEditing(null);
     const load = async () => {
       try {
         const spaces = await request<Workspace[]>('/workspaces', 'GET', undefined, controller.signal);
@@ -173,12 +176,13 @@ export default function CRM() {
         if (!id) {setLoading(false); return;}
         if (id !== workspaceId) {setWorkspaceId(id); return;}
         const path = `/workspaces/${id}`;
-        const [nextPipelines, nextClients, nextItems] = await Promise.all([
+        const [nextPipelines, nextClients, nextMembers, nextItems] = await Promise.all([
           request<Pipeline[]>(`${path}/pipelines`, 'GET', undefined, controller.signal),
-          request<Client[]>(`${path}/clients`, 'GET', undefined, controller.signal), loadDeals(path, controller.signal),
+          request<Client[]>(`${path}/clients`, 'GET', undefined, controller.signal),
+          request<Member[]>(`${path}/members`, 'GET', undefined, controller.signal), loadDeals(path, controller.signal),
         ]);
         if (controller.signal.aborted) return;
-        setPipelines(nextPipelines); setPipelineId(nextPipelines[0]?.id || ''); setClients(nextClients); setItems(nextItems); setLoading(false);
+        setPipelines(nextPipelines); setPipelineId(nextPipelines[0]?.id || ''); setClients(nextClients); setMembers(nextMembers); setItems(nextItems); setLoading(false);
       } catch(e) {if (!controller.signal.aborted) {setError(errorText(e)); setLoading(false);}}
     };
     void load();
@@ -234,17 +238,17 @@ export default function CRM() {
         {pipeline.stages.map(stage => {const list = filtered.filter(d => d.stage_id === stage.id); return <section className="kanbanCol" key={stage.id} onDragOver={e => e.preventDefault()} onDrop={e => {e.preventDefault(); void move(e.dataTransfer.getData('dealId'), stage.id);}}>
           <div className="colHead"><div><span className="dot"/><b>{stage.name}</b><em>{list.length}</em></div><strong>{money(list.reduce((sum, d) => sum + Math.round(Number(d.amount) * 100), 0) / 100, workspaces.find(w => w.id === workspaceId)?.currency || 'RUB')}</strong></div>
           <div className="dealList">{list.map(d => <article className="deal card" key={d.id} draggable={!busy} tabIndex={0} aria-label={`Открыть ${d.title}`} onKeyDown={e => {if (e.key === 'Enter') setSelectedId(d.id);}} onDragStart={e => e.dataTransfer.setData('dealId', d.id)} onClick={() => setSelectedId(d.id)}>
-            <div className="dealTop"><small>{d.source || 'Без источника'}</small></div><h3>{d.title}</h3><p>{clients.find(c => c.id === d.client_id)?.name} · {d.contact_name || 'Без контакта'}</p><strong>{money(d.amount, d.currency)}</strong>
+            <div className="dealTop"><small>{d.source || 'Без источника'}</small></div><h3>{d.title}</h3><p>{clients.find(c => c.id === d.client_id)?.name} · {d.contact_name || 'Без контакта'}</p><p>Ответственный: {members.find(m => m.user_id === d.responsible_user_id)?.first_name || 'Не назначен'}</p><strong>{money(d.amount, d.currency)}</strong>
             <div className={`follow ${d.follow_up_at && new Date(d.follow_up_at).getTime() < Date.now() ? 'late' : ''}`}><CalendarClock size={14}/><span>{d.follow_up_at ? new Date(d.follow_up_at).toLocaleString('ru-RU') : 'Не назначен'}</span></div>
           </article>)}</div><button className="addDeal" disabled={busy} onClick={() => {setFormError(''); setEditing('new');}}><Plus size={15}/>Добавить сделку</button>
         </section>;})}
       </div>
     </>}
-    {selected && <DealDrawer key={selected.id} base={base} canDelete={['OWNER', 'ADMIN'].includes(workspaces.find(w => w.id === workspaceId)?.role || '')} deal={selected} client={clients.find(c => c.id === selected.client_id)} stage={pipelines.flatMap(p => p.stages).find(s => s.id === selected.stage_id)?.name} busy={busy}
+    {selected && <DealDrawer key={selected.id} base={base} canDelete={['OWNER', 'ADMIN'].includes(workspaces.find(w => w.id === workspaceId)?.role || '')} deal={selected} client={clients.find(c => c.id === selected.client_id)} stage={pipelines.flatMap(p => p.stages).find(s => s.id === selected.stage_id)?.name} responsibleName={members.find(m => m.user_id === selected.responsible_user_id)?.first_name} busy={busy}
       onClose={() => setSelectedId(null)} onEdit={() => {setFormError(''); setEditing(selected);}}
       onDelete={() => mutate(async () => {await request(`${base}/deals/${selected.id}`, 'DELETE'); setItems(prev => prev.filter(d => d.id !== selected.id)); setSelectedId(null);})}
       onFollow={value => mutate(async () => replace(await request<Deal>(`${base}/deals/${selected.id}/follow-up`, value ? 'PUT' : 'DELETE', value || undefined)))}
       onComplete={async outcome => {let completion!: FollowUpCompletion; await mutate(async () => {const result = await request<{completion: FollowUpCompletion; deal: Deal}>(`${base}/deals/${selected.id}/follow-up/complete`, 'POST', {outcome_comment: outcome || null}); completion = result.completion; replace(result.deal);}); return completion;}}/>}
-    {editing && <DealForm deal={editing === 'new' ? undefined : editing} clients={clients} pipelines={pipelines} initialPipeline={pipelineId} busy={busy} error={formError} onClose={() => setEditing(null)} onSave={saveDeal}/>}
+    {editing && <DealForm deal={editing === 'new' ? undefined : editing} clients={clients} members={members} pipelines={pipelines} initialPipeline={pipelineId} busy={busy} error={formError} onClose={() => setEditing(null)} onSave={saveDeal}/>}
   </>;
 }

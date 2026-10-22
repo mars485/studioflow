@@ -18,9 +18,11 @@ test('registration through follow-up survives reload', async ({page}) => {
   const form = page.getByRole('dialog', {name: 'Новая сделка'});
   await form.getByLabel('Название сделки').fill(deal);
   await form.getByLabel('Название клиента').fill(`E2E client ${stamp}`);
+  await form.getByLabel('Ответственный').selectOption({index: 1});
   await form.getByRole('button', {name: 'Сохранить сделку'}).click();
   const card = page.getByRole('article', {name: `Открыть ${deal}`});
   await expect(card).toBeVisible();
+  await expect(card).toContainText('Ответственный: E2E');
   const stage = page.locator('.kanbanCol').nth(1);
   await card.dragTo(stage);
   await expect(stage.getByRole('article', {name: `Открыть ${deal}`})).toBeVisible();
