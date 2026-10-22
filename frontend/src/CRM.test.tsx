@@ -1,9 +1,9 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import CRM from './CRM';
-import {type Client, type Deal, type FollowUpCompletion, type Pipeline, type Stage, localDateTime} from './api';
+import {type Client, type Contact, type Deal, type FollowUpCompletion, type Pipeline, type Stage, localDateTime} from './api';
 
-const deal: Deal = {id: 'd1', workspace_id: 'w1', title: 'Сайт клиента', client_id: 'c1', pipeline_id: 'p1', stage_id: 's1',
+const deal: Deal = {id: 'd1', workspace_id: 'w1', title: 'Сайт клиента', client_id: 'c1', contact_id: null, pipeline_id: 'p1', stage_id: 's1',
   responsible_user_id: null, amount: '65000.25', currency: 'RUB', contact_name: 'Мария', source: 'Сайт', description: null,
   follow_up_at: '2026-12-01T11:30:00Z', follow_up_action: 'proposal', follow_up_comment: 'Отправить КП',
   created_at: '2026-09-01T10:00:00Z', updated_at: '2026-09-01T10:00:00Z'};
@@ -16,12 +16,14 @@ let fetchMock: ReturnType<typeof vi.fn>;
 let stages: Stage[];
 let pipelineRows: Pipeline[];
 let clientRows: Client[];
+let contactRows: Contact[];
 
 beforeEach(() => {
   stored = [{...deal}]; notes = []; completed = []; failMutation = false; failLoad = false;
   stages = [{id: 's1', pipeline_id: 'p1', name: 'Новый лид', position: 0, stage_type: 'OPEN', color: null}, {id: 's2', pipeline_id: 'p1', name: 'Контакт', position: 1, stage_type: 'OPEN', color: null}];
   pipelineRows = [{id: 'p1', name: 'Продажи', is_default: true, is_active: true, stages}];
   clientRows = [{id: 'c1', type: 'COMPANY', name: 'Клиент', phone: null, email: null, website: null, notes: null}];
+  contactRows = [];
   fetchMock = vi.fn(async (url: string, options: RequestInit = {}) => {
     const method = options.method || 'GET';
     const data = options.body ? JSON.parse(String(options.body)) : null;
@@ -48,6 +50,20 @@ beforeEach(() => {
       if (method === 'DELETE') {stages = stages.filter(stage => stage.id !== id).map((stage, position) => ({...stage, position})); pipelineRows[0].stages = stages; return response(null, 204);}
     }
     if (url.endsWith('/members')) return response([{id: 'm1', user_id: 'u1', email: 'manager@example.com', first_name: 'Менеджер', role: 'MANAGER'}]);
+    if (url.endsWith('/contacts')) {
+      if (method === 'POST') {const item: Contact = {id: `t${contactRows.length + 1}`, workspace_id: 'w1', first_name: data.first_name,
+        last_name: data.last_name || null, middle_name: data.middle_name || null, phone: data.phone || null,
+        email: data.email || null, website: data.website || null, notes: data.notes || null, client_ids: data.client_ids,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString()}; contactRows.push(item); return response(item, 201);}
+      return response(contactRows);
+    }
+    if (url.includes('/contacts/') && url.endsWith('/deals')) return response(stored.filter(item => item.contact_id === url.split('/contacts/')[1].split('/')[0]));
+    if (url.includes('/contacts/')) {
+      const id = url.split('/contacts/')[1].split('/')[0]; const item = contactRows.find(row => row.id === id);
+      if (method === 'PATCH') {Object.assign(item!, data); return response(item);}
+      if (method === 'DELETE') {contactRows = contactRows.filter(row => row.id !== id); return response(null, 204);}
+      return response(item || {detail: 'Contact not found'}, item ? 200 : 404);
+    }
     if (url.endsWith('/clients')) {
       if (method === 'POST') {const item: Client = {id: `c${clientRows.length + 1}`, type: 'COMPANY', name: data.name,
         phone: data.phone || null, email: data.email || null, website: data.website || null, notes: data.notes || null}; clientRows.push(item); return response(item, 201);}
@@ -87,6 +103,33 @@ beforeEach(() => {
 afterEach(() => {cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks();});
 
 describe('CRM persistence', () => {
+  it('creates a contact linked to a company and selects it on the deal', async () => {
+    render(<CRM/>);
+    await screen.findByRole('article', {name: 'Открыть Сайт клиента'});
+    fireEvent.click(screen.getByRole('button', {name: 'Компании'}));
+    const companies = screen.getByRole('dialog', {name: 'Компании'});
+    fireEvent.click(within(companies).getByRole('button', {name: 'Клиент'}));
+    fireEvent.click(within(companies).getByRole('button', {name: 'Добавить контакт'}));
+    const contacts = screen.getByRole('dialog', {name: 'Контакты'});
+    fireEvent.change(within(contacts).getByLabelText('Имя'), {target: {value: 'Мария'}});
+    fireEvent.change(within(contacts).getByLabelText('Фамилия'), {target: {value: 'Иванова'}});
+    failMutation = true;
+    fireEvent.click(within(contacts).getByRole('button', {name: 'Сохранить контакт'}));
+    await within(contacts).findByRole('alert');
+    expect((within(contacts).getByLabelText('Имя') as HTMLInputElement).value).toBe('Мария');
+    failMutation = false;
+    fireEvent.click(within(contacts).getByRole('button', {name: 'Сохранить контакт'}));
+    await waitFor(() => expect(contactRows).toHaveLength(1));
+    expect(contactRows[0].client_ids).toEqual(['c1']);
+    fireEvent.click(within(contacts).getByRole('button', {name: 'Закрыть'}));
+    fireEvent.click(screen.getByRole('article', {name: 'Открыть Сайт клиента'}));
+    fireEvent.click(screen.getByRole('button', {name: 'Редактировать'}));
+    fireEvent.change(screen.getByLabelText('Связанный контакт'), {target: {value: 't1'}});
+    fireEvent.click(screen.getByRole('button', {name: 'Сохранить сделку'}));
+    await waitFor(() => expect(stored[0].contact_id).toBe('t1'));
+    fireEvent.click(screen.getByRole('article', {name: 'Открыть Сайт клиента'}));
+    expect(screen.getByRole('button', {name: 'Иванова Мария'})).toBeTruthy();
+  });
   it('opens a company from its deal and saves contact details without losing a failed draft', async () => {
     render(<CRM/>);
     fireEvent.click(await screen.findByRole('article', {name: 'Открыть Сайт клиента'}));

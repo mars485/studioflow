@@ -1,13 +1,14 @@
 import {useEffect, useState, type FormEvent} from 'react';
 import {X} from 'lucide-react';
-import {type Client, type Deal, errorText, money, request} from './api';
+import {type Client, type Contact, type Deal, contactName, errorText, money, request} from './api';
 
 type Draft = {name: string; phone: string; email: string; website: string; notes: string};
 const empty: Draft = {name: '', phone: '', email: '', website: '', notes: ''};
 
-function ClientEditor({client, clients, base, canDelete, onChanged, onOpenDeal}: {
-  client?: Client; clients: Client[]; base: string; canDelete: boolean;
+function ClientEditor({client, clients, contacts, base, canDelete, onChanged, onOpenDeal, onOpenContact}: {
+  client?: Client; clients: Client[]; contacts: Contact[]; base: string; canDelete: boolean;
   onChanged: (selectedId?: string) => Promise<void>; onOpenDeal: (id: string) => void;
+  onOpenContact: (id?: string, clientId?: string) => void;
 }) {
   const [draft, setDraft] = useState<Draft>(client ? {
     name: client.name, phone: client.phone || '', email: client.email || '',
@@ -61,6 +62,10 @@ function ClientEditor({client, clients, base, canDelete, onChanged, onOpenDeal}:
       <div className="clientActions"><button className="saveFollow" disabled={!draft.name.trim()}>{busy ? 'Сохранение…' : 'Сохранить компанию'}</button>
         {client && canDelete && <button type="button" className="noteBtn" onClick={() => void remove()}>Удалить компанию</button>}</div>
     </fieldset></form>
+    {client && <section className="clientDeals"><h3>Контакты компании</h3>
+      <ul>{contacts.filter(row => row.client_ids.includes(client.id)).map(row => <li key={row.id}><button type="button" onClick={() => onOpenContact(row.id)}>{contactName(row)}</button></li>)}</ul>
+      <button type="button" className="noteBtn" onClick={() => onOpenContact(undefined, client.id)}>Добавить контакт</button>
+    </section>}
     {client && <section className="clientDeals"><h3>Сделки компании</h3>
       {loading ? <p role="status">Загрузка сделок…</p> : dealError ? <p role="alert">{dealError} <button type="button" onClick={() => setReload(n => n + 1)}>Повторить</button></p> :
         deals.length ? <ul>{deals.map(deal => <li key={deal.id}><button type="button" onClick={() => onOpenDeal(deal.id)}>{deal.title}</button><span>{money(deal.amount, deal.currency)}</span></li>)}</ul> : <p className="muted">Сделок пока нет.</p>}
@@ -68,9 +73,10 @@ function ClientEditor({client, clients, base, canDelete, onChanged, onOpenDeal}:
   </div>;
 }
 
-export default function ClientDirectory({clients, base, canDelete, initialId, onClose, onChanged, onOpenDeal}: {
-  clients: Client[]; base: string; canDelete: boolean; initialId?: string; onClose: () => void;
+export default function ClientDirectory({clients, contacts, base, canDelete, initialId, onClose, onChanged, onOpenDeal, onOpenContact}: {
+  clients: Client[]; contacts: Contact[]; base: string; canDelete: boolean; initialId?: string; onClose: () => void;
   onChanged: (selectedId?: string) => Promise<void>; onOpenDeal: (id: string) => void;
+  onOpenContact: (id?: string, clientId?: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(initialId || null);
   const [search, setSearch] = useState('');
@@ -83,6 +89,6 @@ export default function ClientDirectory({clients, base, canDelete, initialId, on
     <div className="clientDirectoryBody"><aside><label>Поиск компаний<input value={search} onChange={e => setSearch(e.target.value)}/></label>
       <button className="clientListButton" type="button" onClick={() => setSelectedId('new')}>+ Новая компания</button>
       {filtered.length ? <ul>{filtered.map(row => <li key={row.id}><button className="clientListButton" type="button" aria-current={selectedId === row.id ? 'true' : undefined} onClick={() => setSelectedId(row.id)}>{row.name}</button></li>)}</ul> : <p className="muted">Компании не найдены.</p>}
-    </aside><div>{selectedId ? <ClientEditor key={selectedId} client={selected} clients={clients} base={base} canDelete={canDelete} onChanged={changed} onOpenDeal={onOpenDeal}/> : <p className="muted">Выберите компанию или создайте новую.</p>}</div></div>
+    </aside><div>{selectedId ? <ClientEditor key={selectedId} client={selected} clients={clients} contacts={contacts} base={base} canDelete={canDelete} onChanged={changed} onOpenDeal={onOpenDeal} onOpenContact={onOpenContact}/> : <p className="muted">Выберите компанию или создайте новую.</p>}</div></div>
   </section></div>;
 }

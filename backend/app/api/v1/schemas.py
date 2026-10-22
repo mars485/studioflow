@@ -56,6 +56,63 @@ class ClientUpdate(BaseModel):
         return self
 
 
+ContactName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+OptionalContactName = Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)] | None
+
+
+class ContactCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    first_name: ContactName
+    last_name: OptionalContactName = None
+    middle_name: OptionalContactName = None
+    phone: Annotated[str, StringConstraints(strip_whitespace=True, max_length=50)] | None = None
+    email: EmailStr | None = None
+    website: Annotated[str, StringConstraints(strip_whitespace=True, max_length=255)] | None = None
+    notes: str | None = Field(default=None, max_length=10000)
+    client_ids: list[UUID] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def unique_clients(self):
+        if len(self.client_ids) != len(set(self.client_ids)):
+            raise ValueError("Company links must be unique")
+        return self
+
+
+class ContactUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    first_name: ContactName | None = None
+    last_name: OptionalContactName = None
+    middle_name: OptionalContactName = None
+    phone: Annotated[str, StringConstraints(strip_whitespace=True, max_length=50)] | None = None
+    email: EmailStr | None = None
+    website: Annotated[str, StringConstraints(strip_whitespace=True, max_length=255)] | None = None
+    notes: str | None = Field(default=None, max_length=10000)
+    client_ids: list[UUID] | None = Field(default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def require_change(self):
+        if not self.model_fields_set or ("first_name" in self.model_fields_set and self.first_name is None):
+            raise ValueError("Specify at least one field; first_name cannot be null")
+        if self.client_ids is not None and len(self.client_ids) != len(set(self.client_ids)):
+            raise ValueError("Company links must be unique")
+        return self
+
+
+class ContactOut(Output):
+    id: UUID
+    workspace_id: UUID
+    first_name: str
+    last_name: str | None
+    middle_name: str | None
+    phone: str | None
+    email: str | None
+    website: str | None
+    notes: str | None
+    client_ids: list[UUID]
+    created_at: datetime
+    updated_at: datetime
+
+
 class StageOut(Output):
     id: UUID
     pipeline_id: UUID
@@ -112,6 +169,7 @@ class DealCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: Name
     client_id: UUID
+    contact_id: UUID | None = None
     pipeline_id: UUID
     stage_id: UUID
     responsible_user_id: UUID | None = None
@@ -125,6 +183,7 @@ class DealUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: Name | None = None
     client_id: UUID | None = None
+    contact_id: UUID | None = None
     pipeline_id: UUID | None = None
     stage_id: UUID | None = None
     responsible_user_id: UUID | None = None
@@ -185,6 +244,7 @@ class DealOut(Output):
     workspace_id: UUID
     title: str
     client_id: UUID
+    contact_id: UUID | None
     pipeline_id: UUID
     stage_id: UUID
     responsible_user_id: UUID | None

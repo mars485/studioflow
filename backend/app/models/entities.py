@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, ForeignKeyConstraint, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, ForeignKeyConstraint, Index, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
@@ -68,6 +68,30 @@ class Client(Base, TimestampMixin):
     website: Mapped[str | None] = mapped_column(String(255))
     notes: Mapped[str | None] = mapped_column(Text)
 
+class Contact(Base, TimestampMixin):
+    __tablename__ = "contacts"
+    __table_args__ = (UniqueConstraint("workspace_id", "id", name="uq_contacts_workspace_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    first_name: Mapped[str] = mapped_column(String(100))
+    last_name: Mapped[str | None] = mapped_column(String(100))
+    middle_name: Mapped[str | None] = mapped_column(String(100))
+    phone: Mapped[str | None] = mapped_column(String(50))
+    email: Mapped[str | None] = mapped_column(String(320))
+    website: Mapped[str | None] = mapped_column(String(255))
+    notes: Mapped[str | None] = mapped_column(Text)
+
+class ContactClient(Base):
+    __tablename__ = "contact_clients"
+    __table_args__ = (
+        ForeignKeyConstraint(["workspace_id", "contact_id"], ["contacts.workspace_id", "contacts.id"], name="fk_contact_clients_workspace_contact", ondelete="CASCADE"),
+        ForeignKeyConstraint(["workspace_id", "client_id"], ["clients.workspace_id", "clients.id"], name="fk_contact_clients_workspace_client", ondelete="CASCADE"),
+        Index("ix_contact_clients_client_id", "client_id"),
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    contact_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    client_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+
 class Pipeline(Base, TimestampMixin):
     __tablename__ = "pipelines"
     __table_args__ = (UniqueConstraint("workspace_id", "id", name="uq_pipelines_workspace_id"),)
@@ -98,6 +122,7 @@ class Deal(Base, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("workspace_id", "id", name="uq_deals_workspace_id"),
         ForeignKeyConstraint(["workspace_id", "client_id"], ["clients.workspace_id", "clients.id"], name="fk_deals_workspace_client", ondelete="RESTRICT"),
+        ForeignKeyConstraint(["workspace_id", "contact_id"], ["contacts.workspace_id", "contacts.id"], name="fk_deals_workspace_contact", ondelete="RESTRICT"),
         ForeignKeyConstraint(["workspace_id", "pipeline_id", "stage_id"], ["pipeline_stages.workspace_id", "pipeline_stages.pipeline_id", "pipeline_stages.id"], name="fk_deals_workspace_stage", ondelete="RESTRICT"),
         CheckConstraint("amount >= 0", name="ck_deals_amount"),
         CheckConstraint("(follow_up_at IS NULL AND follow_up_action IS NULL AND follow_up_comment IS NULL) OR (follow_up_at IS NOT NULL AND follow_up_action IN ('call', 'message', 'proposal', 'decision') AND follow_up_action IS NOT NULL)", name="ck_deals_follow_up"),
@@ -106,6 +131,7 @@ class Deal(Base, TimestampMixin):
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(255))
     client_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clients.id", ondelete="RESTRICT"))
+    contact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("contacts.id", ondelete="RESTRICT"))
     pipeline_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pipelines.id", ondelete="RESTRICT"))
     stage_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pipeline_stages.id", ondelete="RESTRICT"))
     responsible_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

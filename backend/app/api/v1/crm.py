@@ -1,18 +1,18 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import current_user, workspace_access, workspace_admin
-from app.api.v1.schemas import (ClientCreate, ClientOut, ClientUpdate, DealCreate, DealOut,
+from app.api.v1.schemas import (ClientCreate, ClientOut, ClientUpdate, ContactCreate, ContactOut, ContactUpdate, DealCreate, DealOut,
                                 DealUpdate, DealActivityCreate, DealActivityOut, FollowUp,
                                 FollowUpComplete, FollowUpCompleteResult, FollowUpCompletionOut, PipelineCreate, PipelineOut, PipelineUpdate,
                                 StageCreate, StageOrder, StageOut, StageUpdate)
 from app.core.database import get_db
-from app.models import Client, Deal, DealActivity, FollowUpCompletion, Pipeline, PipelineStage, User, Workspace, WorkspaceMember
+from app.models import Client, Contact, ContactClient, Deal, DealActivity, FollowUpCompletion, Pipeline, PipelineStage, User, Workspace, WorkspaceMember
 from app.models.entities import StageType
 
 router = APIRouter(tags=["CRM"])
@@ -279,6 +279,131 @@ async def delete_client(client_id: UUID, workspace_id: UUID = Depends(workspace_
     return Response(status_code=204)
 
 
+async def contact_output(db: AsyncSession, row: Contact) -> ContactOut:
+    ids = (await db.scalars(select(ContactClient.client_id).where(
+        ContactClient.workspace_id == row.workspace_id, ContactClient.contact_id == row.id)
+        .order_by(ContactClient.client_id))).all()
+    return ContactOut.model_validate({**{key: getattr(row, key) for key in (
+        "id", "workspace_id", "first_name", "last_name", "middle_name", "phone", "email",
+        "website", "notes", "created_at", "updated_at")}, "client_ids": ids})
+
+
+async def validate_contact_clients(db: AsyncSession, workspace_id: UUID, client_ids: list[UUID]):
+    if not client_ids:
+        return
+    existing = (await db.scalars(select(Client.id).where(Client.workspace_id == workspace_id,
+        Client.id.in_(client_ids)).with_for_update())).all()
+    if len(existing) != len(client_ids):
+        raise HTTPException(422, "Все компании контакта должны принадлежать этой студии")
+
+
+@scoped.get("/contacts", response_model=list[ContactOut])
+async def contacts(search: str | None = Query(None, max_length=255),
+                   workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    query = select(Contact).where(Contact.workspace_id == workspace_id)
+    if search and search.strip():
+        pattern = f"%{search.strip().replace('%', r'\%').replace('_', r'\_')}%"
+        query = query.where(or_(Contact.first_name.ilike(pattern, escape="\\"),
+            Contact.last_name.ilike(pattern, escape="\\"), Contact.phone.ilike(pattern, escape="\\"),
+            Contact.email.ilike(pattern, escape="\\")))
+    rows = (await db.scalars(query.order_by(Contact.last_name, Contact.first_name, Contact.id))).all()
+    return [await contact_output(db, row) for row in rows]
+
+
+@scoped.post("/contacts", response_model=ContactOut, status_code=201)
+async def create_contact(data: ContactCreate, workspace_id: UUID = Depends(workspace_access),
+                         db: AsyncSession = Depends(get_db)):
+    await validate_contact_clients(db, workspace_id, data.client_ids)
+    row = Contact(workspace_id=workspace_id, **data.model_dump(exclude={"client_ids"}))
+    db.add(row)
+    await db.flush()
+    db.add_all(ContactClient(workspace_id=workspace_id, contact_id=row.id, client_id=client_id)
+               for client_id in data.client_ids)
+    await db.commit()
+    await db.refresh(row)
+    return await contact_output(db, row)
+
+
+@scoped.get("/contacts/{contact_id}", response_model=ContactOut)
+async def get_contact(contact_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                      db: AsyncSession = Depends(get_db)):
+    row = await db.scalar(select(Contact).where(Contact.id == contact_id, Contact.workspace_id == workspace_id))
+    if row is None:
+        raise HTTPException(404, "Contact not found")
+    return await contact_output(db, row)
+
+
+@scoped.get("/contacts/{contact_id}/deals", response_model=list[DealOut])
+async def contact_deals(contact_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                        db: AsyncSession = Depends(get_db)):
+    if not await db.scalar(select(Contact.id).where(Contact.id == contact_id,
+        Contact.workspace_id == workspace_id)):
+        raise HTTPException(404, "Contact not found")
+    return (await db.scalars(select(Deal).where(Deal.workspace_id == workspace_id,
+        Deal.contact_id == contact_id).order_by(Deal.created_at.desc(), Deal.id.desc()))).all()
+
+
+@scoped.patch("/contacts/{contact_id}", response_model=ContactOut)
+async def update_contact(contact_id: UUID, data: ContactUpdate,
+                         workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    row = await db.scalar(select(Contact).where(Contact.id == contact_id,
+        Contact.workspace_id == workspace_id).with_for_update())
+    if row is None:
+        raise HTTPException(404, "Contact not found")
+    changes = data.model_dump(exclude_unset=True)
+    if "client_ids" in changes:
+        client_ids = changes.pop("client_ids")
+        if client_ids is None:
+            raise HTTPException(422, "Company links cannot be null")
+        await validate_contact_clients(db, workspace_id, client_ids)
+        (await db.scalars(select(ContactClient).where(ContactClient.workspace_id == workspace_id,
+            ContactClient.contact_id == contact_id).with_for_update())).all()
+        used = (await db.scalars(select(Deal.client_id).where(Deal.workspace_id == workspace_id,
+            Deal.contact_id == contact_id).distinct())).all()
+        if not set(used).issubset(set(client_ids)):
+            raise HTTPException(409, "Нельзя отвязать компанию, пока контакт указан в её сделке")
+        await db.execute(delete(ContactClient).where(ContactClient.workspace_id == workspace_id,
+            ContactClient.contact_id == contact_id))
+        db.add_all(ContactClient(workspace_id=workspace_id, contact_id=contact_id, client_id=client_id)
+                   for client_id in client_ids)
+    for name, value in changes.items():
+        setattr(row, name, value)
+    await db.commit()
+    await db.refresh(row)
+    return await contact_output(db, row)
+
+
+@scoped.delete("/contacts/{contact_id}", status_code=204)
+async def delete_contact(contact_id: UUID, workspace_id: UUID = Depends(workspace_admin),
+                         db: AsyncSession = Depends(get_db)):
+    row = await db.scalar(select(Contact).where(Contact.id == contact_id,
+        Contact.workspace_id == workspace_id).with_for_update())
+    if row is None:
+        raise HTTPException(404, "Contact not found")
+    if await db.scalar(select(Deal.id).where(Deal.workspace_id == workspace_id,
+        Deal.contact_id == contact_id).limit(1)):
+        raise HTTPException(409, "Контакт используется в сделках")
+    await db.delete(row)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "Контакт используется в сделках")
+    return Response(status_code=204)
+
+
+@scoped.get("/clients/{client_id}/contacts", response_model=list[ContactOut])
+async def client_contacts(client_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                          db: AsyncSession = Depends(get_db)):
+    if not await db.scalar(select(Client.id).where(Client.id == client_id, Client.workspace_id == workspace_id)):
+        raise HTTPException(404, "Client not found")
+    rows = (await db.scalars(select(Contact).join(ContactClient,
+        (ContactClient.contact_id == Contact.id) & (ContactClient.workspace_id == workspace_id))
+        .where(ContactClient.client_id == client_id, Contact.workspace_id == workspace_id)
+        .order_by(Contact.last_name, Contact.first_name, Contact.id))).all()
+    return [await contact_output(db, row) for row in rows]
+
+
 async def find_deal(db: AsyncSession, workspace_id: UUID, deal_id: UUID) -> Deal:
     row = await db.scalar(select(Deal).where(Deal.id == deal_id, Deal.workspace_id == workspace_id))
     if row is None:
@@ -315,6 +440,24 @@ async def validate_responsible(db: AsyncSession, workspace_id: UUID, responsible
         raise HTTPException(422, "Ответственный должен быть активным участником студии")
 
 
+async def validate_deal_contact(db: AsyncSession, workspace_id: UUID,
+                                client_id: UUID, contact_id: UUID | None) -> Contact | None:
+    if contact_id is None:
+        return None
+    row = await db.scalar(select(Contact).where(Contact.id == contact_id,
+        Contact.workspace_id == workspace_id).with_for_update())
+    link = await db.scalar(select(ContactClient.contact_id).where(
+        ContactClient.workspace_id == workspace_id, ContactClient.contact_id == contact_id,
+        ContactClient.client_id == client_id).with_for_update())
+    if row is None or link is None:
+        raise HTTPException(422, "Контакт должен быть связан с компанией этой сделки")
+    return row
+
+
+def contact_label(row: Contact) -> str:
+    return " ".join(part for part in (row.last_name, row.first_name, row.middle_name) if part)
+
+
 @scoped.get("/deals", response_model=list[DealOut])
 async def deals(workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db),
                 pipeline_id: UUID | None = None, limit: int = Query(100, ge=1, le=500),
@@ -329,9 +472,13 @@ async def deals(workspace_id: UUID = Depends(workspace_access), db: AsyncSession
 async def create_deal(data: DealCreate, workspace_id: UUID = Depends(workspace_access),
                       db: AsyncSession = Depends(get_db)):
     await validate_relations(db, workspace_id, data.client_id, data.pipeline_id, data.stage_id)
+    contact = await validate_deal_contact(db, workspace_id, data.client_id, data.contact_id)
     await validate_responsible(db, workspace_id, data.responsible_user_id)
     workspace = await db.get(Workspace, workspace_id)
-    row = Deal(workspace_id=workspace_id, currency=workspace.currency, **data.model_dump())
+    values = data.model_dump()
+    if contact:
+        values["contact_name"] = contact_label(contact)
+    row = Deal(workspace_id=workspace_id, currency=workspace.currency, **values)
     db.add(row)
     await db.commit()
     await db.refresh(row)
@@ -351,6 +498,10 @@ async def update_deal(deal_id: UUID, data: DealUpdate, workspace_id: UUID = Depe
     changes = data.model_dump(exclude_unset=True)
     await validate_relations(db, workspace_id, changes.get("client_id", row.client_id),
                              changes.get("pipeline_id", row.pipeline_id), changes.get("stage_id", row.stage_id))
+    contact = await validate_deal_contact(db, workspace_id, changes.get("client_id", row.client_id),
+                                          changes.get("contact_id", row.contact_id))
+    if "contact_id" in changes:
+        changes["contact_name"] = contact_label(contact) if contact else None
     await validate_responsible(db, workspace_id, changes.get("responsible_user_id", row.responsible_user_id))
     next_stage_id = changes.get("stage_id", row.stage_id)
     if next_stage_id != row.stage_id:
