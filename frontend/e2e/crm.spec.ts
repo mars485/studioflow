@@ -14,6 +14,14 @@ test('registration through follow-up survives reload', async ({page}) => {
   await page.getByLabel('Название новой студии').fill(`E2E studio ${stamp}`);
   await page.getByRole('button', {name: 'Создать студию'}).click();
   await page.getByRole('button', {name: 'CRM', exact: true}).click();
+  await page.getByRole('button', {name: 'Настроить стадии'}).click();
+  const settings = page.getByRole('dialog', {name: 'Настройка стадий'});
+  await settings.getByLabel('Новый этап').fill(`E2E этап ${stamp}`);
+  await settings.getByRole('button', {name: 'Добавить этап'}).click();
+  await expect(settings.getByRole('button', {name: `Выше E2E этап ${stamp}`})).toBeVisible();
+  await settings.getByRole('button', {name: `Выше E2E этап ${stamp}`}).click();
+  await expect(page.locator('.kanbanCol').nth(3).locator('.colHead b')).toHaveText(`E2E этап ${stamp}`);
+  await settings.getByRole('button', {name: 'Закрыть'}).click();
   await page.getByRole('button', {name: 'Новая сделка'}).click();
   const form = page.getByRole('dialog', {name: 'Новая сделка'});
   await form.getByLabel('Название сделки').fill(deal);

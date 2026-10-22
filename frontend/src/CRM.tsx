@@ -1,9 +1,55 @@
 import {useEffect, useRef, useState, type FormEvent} from 'react';
 import {CalendarClock, Plus, Search, X} from 'lucide-react';
-import {type Action, type Client, type Deal, type DealActivity, type DealInput, type FollowUpCompletion, type Member, type Pipeline, type Workspace,
+import {type Action, type Client, type Deal, type DealActivity, type DealInput, type FollowUpCompletion, type Member, type Pipeline, type Stage, type Workspace,
   errorText, loadDeals, localDateTime, money, request} from './api';
 
 const actions: Record<Action, string> = {call: 'Позвонить', message: 'Написать в WhatsApp', proposal: 'Отправить КП', decision: 'Уточнить решение'};
+
+function StageEditor({stage, index, count, busy, base, pipelineId, run, onShift}: {
+  stage: Stage; index: number; count: number; busy: boolean; base: string; pipelineId: string;
+  run: (operation: () => Promise<unknown>) => Promise<void>; onShift: (index: number, delta: number) => void;
+}) {
+  const [name, setName] = useState(stage.name);
+  const [color, setColor] = useState(stage.color || '#6366f1');
+  const [type, setType] = useState<Stage['stage_type']>(stage.stage_type);
+  const path = `${base}/pipelines/${pipelineId}/stages`;
+  return <li className="stageSettingsRow"><label>Название этапа<input value={name} maxLength={100} onChange={e => setName(e.target.value)}/></label>
+    <label>Цвет<input type="color" value={color} onChange={e => setColor(e.target.value)}/></label>
+    <label>Тип<select value={type} onChange={e => setType(e.target.value as Stage['stage_type'])}><option value="OPEN">Рабочий</option><option value="WON">Выиграна</option><option value="LOST">Проиграна</option></select></label>
+    <div className="stageSettingsActions">
+      <button type="button" disabled={busy || index === 0} aria-label={`Выше ${stage.name}`} onClick={() => onShift(index, -1)}>↑</button>
+      <button type="button" disabled={busy || index === count - 1} aria-label={`Ниже ${stage.name}`} onClick={() => onShift(index, 1)}>↓</button>
+      <button type="button" disabled={busy || !name.trim()} onClick={() => void run(() => request(`${path}/${stage.id}`, 'PATCH', {name: name.trim(), color, stage_type: type}))}>Сохранить {stage.name}</button>
+      <button type="button" disabled={busy || count <= 2} onClick={() => void run(() => request(`${path}/${stage.id}`, 'DELETE'))}>Удалить {stage.name}</button>
+    </div>
+  </li>;
+}
+
+function StageSettings({pipeline, base, onClose, onChanged}: {pipeline: Pipeline; base: string; onClose: () => void; onChanged: () => Promise<void>}) {
+  const [newName, setNewName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const path = `${base}/pipelines/${pipeline.id}/stages`;
+  const stages = [...pipeline.stages].sort((a, b) => a.position - b.position);
+  const run = async (operation: () => Promise<unknown>) => {
+    if (busy) return;
+    setBusy(true); setError('');
+    try {await operation(); await onChanged();} catch(e) {setError(errorText(e));}
+    finally {setBusy(false);}
+  };
+  const shift = (index: number, delta: number) => {
+    const ids = stages.map(stage => stage.id);
+    [ids[index], ids[index + delta]] = [ids[index + delta], ids[index]];
+    void run(() => request(`${path}/order`, 'PUT', {ids}));
+  };
+  return <div className="modalBackdrop" onClick={() => !busy && onClose()}><section className="stageSettings dealModal" role="dialog" aria-modal="true" aria-label="Настройка стадий" onClick={e => e.stopPropagation()}>
+    <div className="drawerHead"><div><small>{pipeline.name}</small><h2>Настройка стадий</h2></div><button type="button" disabled={busy} aria-label="Закрыть" onClick={onClose}><X size={20}/></button></div>
+    <p className="muted">Этап со сделками удалить нельзя. В воронке должны остаться минимум два этапа.</p>
+    {error && <p role="alert" className="errorMessage">{error}</p>}
+    <ol className="stageSettingsList">{stages.map((stage, index) => <StageEditor key={stage.id} stage={stage} index={index} count={stages.length} busy={busy} base={base} pipelineId={pipeline.id} run={run} onShift={shift}/>)}</ol>
+    <form onSubmit={e => {e.preventDefault(); void run(async () => {await request(`${path}`, 'POST', {name: newName.trim()}); setNewName('');});}}><label>Новый этап<input value={newName} maxLength={100} onChange={e => setNewName(e.target.value)}/></label><button disabled={busy || !newName.trim()}>Добавить этап</button></form>
+  </section></div>;
+}
 
 function DealForm({deal, clients, members, pipelines, initialPipeline, busy, error, onClose, onSave}: {
   deal?: Deal; clients: Client[]; members: Member[]; pipelines: Pipeline[]; initialPipeline: string;
@@ -162,11 +208,12 @@ export default function CRM() {
   const [reload, setReload] = useState(0);
   const [search, setSearch] = useState('');
   const [followFilter, setFollowFilter] = useState<'all' | 'today' | 'overdue' | 'none'>('all');
+  const [stageSettings, setStageSettings] = useState(false);
   const base = `/workspaces/${workspaceId}`;
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true); setError(''); setItems([]); setClients([]); setMembers([]); setPipelines([]); setSelectedId(null); setEditing(null);
+    setLoading(true); setError(''); setItems([]); setClients([]); setMembers([]); setPipelines([]); setSelectedId(null); setEditing(null); setStageSettings(false);
     const load = async () => {
       try {
         const spaces = await request<Workspace[]>('/workspaces', 'GET', undefined, controller.signal);
@@ -217,6 +264,8 @@ export default function CRM() {
     catch(e) {setError(errorText(e));}
   };
   const pipeline = pipelines.find(p => p.id === pipelineId);
+  const canManageStages = ['OWNER', 'ADMIN'].includes(workspaces.find(w => w.id === workspaceId)?.role || '');
+  const refreshPipelines = async () => setPipelines(await request<Pipeline[]>(`${base}/pipelines`));
   const selected = items.find(d => d.id === selectedId);
   const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
   const startOfTomorrow = new Date(startOfToday); startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
@@ -232,6 +281,7 @@ export default function CRM() {
     <div className="crmTools">
       <select aria-label="Рабочее пространство" disabled={loading || busy} value={workspaceId} onChange={e => setWorkspaceId(e.target.value)}>{workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
       <select aria-label="Воронка" disabled={loading || busy} value={pipelineId} onChange={e => setPipelineId(e.target.value)}>{pipelines.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+      {canManageStages && pipeline && <button type="button" className="filter" onClick={() => setStageSettings(true)}>Настроить стадии</button>}
       <div className="search"><Search size={17}/><input aria-label="Поиск сделок" placeholder="Поиск по сделкам и клиентам" value={search} onChange={e => setSearch(e.target.value)}/></div>
       <button className="filter" aria-pressed={followFilter === 'today'} onClick={() => setFollowFilter(followFilter === 'today' ? 'all' : 'today')}><CalendarClock size={17}/>Follow-up сегодня <b>{pipelineItems.filter(isToday).length}</b></button>
       <button className="filter" aria-pressed={followFilter === 'overdue'} onClick={() => setFollowFilter(followFilter === 'overdue' ? 'all' : 'overdue')}>Просрочены <b>{pipelineItems.filter(isOverdue).length}</b></button>
@@ -257,5 +307,6 @@ export default function CRM() {
       onFollow={value => mutate(async () => replace(await request<Deal>(`${base}/deals/${selected.id}/follow-up`, value ? 'PUT' : 'DELETE', value || undefined)))}
       onComplete={async outcome => {let completion!: FollowUpCompletion; await mutate(async () => {const result = await request<{completion: FollowUpCompletion; deal: Deal}>(`${base}/deals/${selected.id}/follow-up/complete`, 'POST', {outcome_comment: outcome || null}); completion = result.completion; replace(result.deal);}); return completion;}}/>}
     {editing && <DealForm deal={editing === 'new' ? undefined : editing} clients={clients} members={members} pipelines={pipelines} initialPipeline={pipelineId} busy={busy} error={formError} onClose={() => setEditing(null)} onSave={saveDeal}/>}
+    {stageSettings && pipeline && <StageSettings pipeline={pipeline} base={base} onClose={() => setStageSettings(false)} onChanged={refreshPipelines}/>}
   </>;
 }

@@ -1,16 +1,19 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import current_user, workspace_access, workspace_admin
 from app.api.v1.schemas import (ClientCreate, ClientOut, DealCreate, DealOut,
                                 DealUpdate, DealActivityCreate, DealActivityOut, FollowUp,
-                                FollowUpComplete, FollowUpCompleteResult, FollowUpCompletionOut, PipelineOut)
+                                FollowUpComplete, FollowUpCompleteResult, FollowUpCompletionOut, PipelineOut,
+                                StageCreate, StageOrder, StageOut, StageUpdate)
 from app.core.database import get_db
 from app.models import Client, Deal, DealActivity, FollowUpCompletion, Pipeline, PipelineStage, User, Workspace, WorkspaceMember
+from app.models.entities import StageType
 
 router = APIRouter(tags=["CRM"])
 scoped = APIRouter(prefix="/workspaces/{workspace_id}")
@@ -23,6 +26,83 @@ async def pipelines(workspace_id: UUID = Depends(workspace_access), db: AsyncSes
     ).options(selectinload(Pipeline.stages)).order_by(Pipeline.is_default.desc(), Pipeline.id))).all()
     return [PipelineOut(id=p.id, name=p.name, is_default=p.is_default,
                         stages=sorted(p.stages, key=lambda s: s.position)) for p in rows]
+
+
+async def lock_pipeline(db: AsyncSession, workspace_id: UUID, pipeline_id: UUID) -> Pipeline:
+    row = await db.scalar(select(Pipeline).where(Pipeline.id == pipeline_id,
+                                                  Pipeline.workspace_id == workspace_id).with_for_update())
+    if row is None:
+        raise HTTPException(404, "Pipeline not found")
+    return row
+
+
+@scoped.post("/pipelines/{pipeline_id}/stages", response_model=StageOut, status_code=201)
+async def create_stage(pipeline_id: UUID, data: StageCreate,
+                       workspace_id: UUID = Depends(workspace_admin), db: AsyncSession = Depends(get_db)):
+    await lock_pipeline(db, workspace_id, pipeline_id)
+    position = (await db.scalar(select(func.coalesce(func.max(PipelineStage.position), -1)).where(
+        PipelineStage.workspace_id == workspace_id, PipelineStage.pipeline_id == pipeline_id))) + 1
+    row = PipelineStage(workspace_id=workspace_id, pipeline_id=pipeline_id, name=data.name,
+                        position=position, stage_type=StageType(data.stage_type), color=data.color)
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+@scoped.patch("/pipelines/{pipeline_id}/stages/{stage_id}", response_model=StageOut)
+async def update_stage(pipeline_id: UUID, stage_id: UUID, data: StageUpdate,
+                       workspace_id: UUID = Depends(workspace_admin), db: AsyncSession = Depends(get_db)):
+    await lock_pipeline(db, workspace_id, pipeline_id)
+    row = await db.scalar(select(PipelineStage).where(PipelineStage.id == stage_id,
+        PipelineStage.workspace_id == workspace_id, PipelineStage.pipeline_id == pipeline_id))
+    if row is None:
+        raise HTTPException(404, "Stage not found")
+    for name, value in data.model_dump(exclude_unset=True).items():
+        setattr(row, name, StageType(value) if name == "stage_type" else value)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+@scoped.put("/pipelines/{pipeline_id}/stages/order", response_model=list[StageOut])
+async def reorder_stages(pipeline_id: UUID, data: StageOrder,
+                         workspace_id: UUID = Depends(workspace_admin), db: AsyncSession = Depends(get_db)):
+    await lock_pipeline(db, workspace_id, pipeline_id)
+    rows = (await db.scalars(select(PipelineStage).where(PipelineStage.workspace_id == workspace_id,
+        PipelineStage.pipeline_id == pipeline_id))).all()
+    if len(data.ids) != len(rows) or len(set(data.ids)) != len(rows) or set(data.ids) != {row.id for row in rows}:
+        raise HTTPException(422, "Order must contain every stage of this pipeline exactly once")
+    by_id = {row.id: row for row in rows}
+    for position, stage_id in enumerate(data.ids):
+        by_id[stage_id].position = position
+    await db.commit()
+    return [by_id[stage_id] for stage_id in data.ids]
+
+
+@scoped.delete("/pipelines/{pipeline_id}/stages/{stage_id}", status_code=204)
+async def delete_stage(pipeline_id: UUID, stage_id: UUID,
+                       workspace_id: UUID = Depends(workspace_admin), db: AsyncSession = Depends(get_db)):
+    await lock_pipeline(db, workspace_id, pipeline_id)
+    rows = (await db.scalars(select(PipelineStage).where(PipelineStage.workspace_id == workspace_id,
+        PipelineStage.pipeline_id == pipeline_id).order_by(PipelineStage.position, PipelineStage.id))).all()
+    row = next((stage for stage in rows if stage.id == stage_id), None)
+    if row is None:
+        raise HTTPException(404, "Stage not found")
+    if len(rows) <= 2:
+        raise HTTPException(409, "В воронке должно остаться не менее двух этапов")
+    if await db.scalar(select(Deal.id).where(Deal.workspace_id == workspace_id,
+                                              Deal.stage_id == stage_id).limit(1)):
+        raise HTTPException(409, "Нельзя удалить этап со сделками")
+    await db.delete(row)
+    for position, stage in enumerate(stage for stage in rows if stage.id != stage_id):
+        stage.position = position
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "Нельзя удалить этап со сделками")
+    return Response(status_code=204)
 
 
 @scoped.get("/clients", response_model=list[ClientOut])
@@ -61,7 +141,7 @@ async def validate_relations(db: AsyncSession, workspace_id: UUID, client_id: UU
     stage = await db.scalar(select(PipelineStage.id).join(Pipeline, Pipeline.id == PipelineStage.pipeline_id).where(
         PipelineStage.id == stage_id, PipelineStage.workspace_id == workspace_id,
         PipelineStage.pipeline_id == pipeline_id, Pipeline.workspace_id == workspace_id,
-        Pipeline.is_active.is_(True)))
+        Pipeline.is_active.is_(True)).with_for_update(of=PipelineStage))
     if client is None or stage is None:
         raise HTTPException(422, "Client, pipeline and stage must belong to this workspace and stage to the active pipeline")
 

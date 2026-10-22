@@ -86,6 +86,37 @@ async def test_responsible_must_be_workspace_member_and_is_cleared_on_removal(cr
     assert (await http.get(path)).json()["responsible_user_id"] is None
 
 
+async def test_stage_management_preserves_deals_and_workspace_rights(crm):
+    http, base = crm["http"], crm["base"]
+    path = base + "/pipelines/" + str(crm["pipelines"][0].id) + "/stages"
+    created = await http.post(path, json={"name": "Review", "color": "#1166AA"})
+    assert created.status_code == 201, created.text
+    stage_id = created.json()["id"]
+    assert created.json()["position"] == 3
+    edited = await http.patch(path + "/" + stage_id, json={"name": "Approval", "stage_type": "WON"})
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["name"] == "Approval" and edited.json()["stage_type"] == "WON"
+    assert (await http.patch(path + "/" + stage_id, json={"name": " "})).status_code == 422
+    order = [stage_id, str(crm["stages"][0].id), str(crm["next"].id)]
+    assert (await http.put(path + "/order", json={"ids": order[:2]})).status_code == 422
+    reordered = await http.put(path + "/order", json={"ids": order})
+    assert reordered.status_code == 200, reordered.text
+    assert [stage["id"] for stage in (await http.get(base + "/pipelines")).json()[0]["stages"]] == order
+    assert (await http.delete(path + "/" + stage_id)).status_code == 204
+    assert (await http.delete(path + "/" + str(crm["next"].id))).status_code == 409
+    occupied = (await http.post(path, json={"name": "Occupied"})).json()
+    deal = await http.post(base + "/deals", json={**crm["payload"], "stage_id": occupied["id"]})
+    assert deal.status_code == 201, deal.text
+    assert (await http.delete(path + "/" + occupied["id"])).status_code == 409
+    assert (await http.get(base + "/deals/" + deal.json()["id"])).json()["stage_id"] == occupied["id"]
+    other = f'/api/v1/workspaces/{crm["spaces"][1].id}/pipelines/{crm["pipelines"][0].id}/stages'
+    assert (await http.post(other, json={"name": "Intrusion"})).status_code == 404
+    member = await crm["db"].scalar(select(WorkspaceMember).where(WorkspaceMember.workspace_id == crm["spaces"][0].id))
+    member.role = "MANAGER"
+    await crm["db"].commit()
+    assert (await http.post(path, json={"name": "Forbidden"})).status_code == 403
+
+
 async def test_crud_and_follow_up_persist(crm):
     http, base = crm["http"], crm["base"]
     assert len((await http.get("/api/v1/workspaces")).json()) == 1
