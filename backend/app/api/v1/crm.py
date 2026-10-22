@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import current_user, workspace_access, workspace_admin
-from app.api.v1.schemas import (ClientCreate, ClientOut, DealCreate, DealOut,
+from app.api.v1.schemas import (ClientCreate, ClientOut, ClientUpdate, DealCreate, DealOut,
                                 DealUpdate, DealActivityCreate, DealActivityOut, FollowUp,
                                 FollowUpComplete, FollowUpCompleteResult, FollowUpCompletionOut, PipelineCreate, PipelineOut, PipelineUpdate,
                                 StageCreate, StageOrder, StageOut, StageUpdate)
@@ -208,19 +208,75 @@ async def delete_stage(pipeline_id: UUID, stage_id: UUID,
 
 
 @scoped.get("/clients", response_model=list[ClientOut])
-async def clients(workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
-    return (await db.scalars(select(Client).where(Client.workspace_id == workspace_id)
+async def clients(search: str | None = Query(None, max_length=255),
+                  workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    query = select(Client).where(Client.workspace_id == workspace_id)
+    if search and search.strip():
+        pattern = f"%{search.strip().replace('%', r'\%').replace('_', r'\_')}%"
+        query = query.where(Client.name.ilike(pattern, escape="\\"))
+    return (await db.scalars(query
                              .order_by(Client.name, Client.id))).all()
 
 
 @scoped.post("/clients", response_model=ClientOut, status_code=201)
 async def create_client(data: ClientCreate, workspace_id: UUID = Depends(workspace_access),
                         db: AsyncSession = Depends(get_db)):
-    row = Client(workspace_id=workspace_id, name=data.name)
+    row = Client(workspace_id=workspace_id, **data.model_dump())
     db.add(row)
     await db.commit()
     await db.refresh(row)
     return row
+
+
+@scoped.get("/clients/{client_id}", response_model=ClientOut)
+async def get_client(client_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                     db: AsyncSession = Depends(get_db)):
+    row = await db.scalar(select(Client).where(Client.id == client_id, Client.workspace_id == workspace_id))
+    if row is None:
+        raise HTTPException(404, "Client not found")
+    return row
+
+
+@scoped.patch("/clients/{client_id}", response_model=ClientOut)
+async def update_client(client_id: UUID, data: ClientUpdate,
+                        workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    row = await db.scalar(select(Client).where(Client.id == client_id,
+        Client.workspace_id == workspace_id).with_for_update())
+    if row is None:
+        raise HTTPException(404, "Client not found")
+    for name, value in data.model_dump(exclude_unset=True).items():
+        setattr(row, name, value)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+@scoped.get("/clients/{client_id}/deals", response_model=list[DealOut])
+async def client_deals(client_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                       db: AsyncSession = Depends(get_db)):
+    if not await db.scalar(select(Client.id).where(Client.id == client_id, Client.workspace_id == workspace_id)):
+        raise HTTPException(404, "Client not found")
+    return (await db.scalars(select(Deal).where(Deal.workspace_id == workspace_id,
+        Deal.client_id == client_id).order_by(Deal.created_at.desc(), Deal.id.desc()))).all()
+
+
+@scoped.delete("/clients/{client_id}", status_code=204)
+async def delete_client(client_id: UUID, workspace_id: UUID = Depends(workspace_admin),
+                        db: AsyncSession = Depends(get_db)):
+    row = await db.scalar(select(Client).where(Client.id == client_id,
+        Client.workspace_id == workspace_id).with_for_update())
+    if row is None:
+        raise HTTPException(404, "Client not found")
+    if await db.scalar(select(Deal.id).where(Deal.workspace_id == workspace_id,
+                                              Deal.client_id == client_id).limit(1)):
+        raise HTTPException(409, "Клиента со сделками удалить нельзя")
+    await db.delete(row)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "Клиента со сделками удалить нельзя")
+    return Response(status_code=204)
 
 
 async def find_deal(db: AsyncSession, workspace_id: UUID, deal_id: UUID) -> Deal:
@@ -239,7 +295,8 @@ async def lock_deal(db: AsyncSession, workspace_id: UUID, deal_id: UUID) -> Deal
 
 async def validate_relations(db: AsyncSession, workspace_id: UUID, client_id: UUID,
                              pipeline_id: UUID, stage_id: UUID):
-    client = await db.scalar(select(Client.id).where(Client.id == client_id, Client.workspace_id == workspace_id))
+    client = await db.scalar(select(Client.id).where(Client.id == client_id,
+        Client.workspace_id == workspace_id).with_for_update())
     stage = await db.scalar(select(PipelineStage.id).join(Pipeline, Pipeline.id == PipelineStage.pipeline_id).where(
         PipelineStage.id == stage_id, PipelineStage.workspace_id == workspace_id,
         PipelineStage.pipeline_id == pipeline_id, Pipeline.workspace_id == workspace_id,

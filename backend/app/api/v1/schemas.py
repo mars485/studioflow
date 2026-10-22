@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, StringConstraints, model_validator
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
 Money = Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
@@ -24,12 +24,36 @@ class WorkspaceOut(Output):
 
 class ClientOut(Output):
     id: UUID
+    type: str
     name: str
+    phone: str | None
+    email: str | None
+    website: str | None
+    notes: str | None
 
 
 class ClientCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: Name
+    phone: Annotated[str, StringConstraints(strip_whitespace=True, max_length=50)] | None = None
+    email: EmailStr | None = None
+    website: Annotated[str, StringConstraints(strip_whitespace=True, max_length=255)] | None = None
+    notes: str | None = Field(default=None, max_length=10000)
+
+
+class ClientUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: Name | None = None
+    phone: Annotated[str, StringConstraints(strip_whitespace=True, max_length=50)] | None = None
+    email: EmailStr | None = None
+    website: Annotated[str, StringConstraints(strip_whitespace=True, max_length=255)] | None = None
+    notes: str | None = Field(default=None, max_length=10000)
+
+    @model_validator(mode="after")
+    def require_change(self):
+        if not self.model_fields_set or ("name" in self.model_fields_set and self.name is None):
+            raise ValueError("Specify at least one field; name cannot be null")
+        return self
 
 
 class StageOut(Output):
