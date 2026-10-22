@@ -5,6 +5,7 @@ import {type Action, type Client, type Contact, type Deal, type DealActivity, ty
 import ClientDirectory from './ClientDirectory';
 import ContactDirectory from './ContactDirectory';
 import DealTasks from './DealTasks';
+import MyDay from './MyDay';
 
 const actions: Record<Action, string> = {call: 'Позвонить', message: 'Написать в WhatsApp', proposal: 'Отправить КП', decision: 'Уточнить решение'};
 
@@ -273,6 +274,7 @@ export default function CRM() {
   const [pipelineSettings, setPipelineSettings] = useState(false);
   const [clientDirectory, setClientDirectory] = useState<string | null>(null);
   const [contactDirectory, setContactDirectory] = useState<{initialId?: string; initialClientId?: string} | null>(null);
+  const [myDayOpen, setMyDayOpen] = useState(false);
   const base = `/workspaces/${workspaceId}`;
 
   useEffect(() => {
@@ -354,6 +356,7 @@ export default function CRM() {
       <select aria-label="Воронка" disabled={loading || busy} value={pipelineId} onChange={e => setPipelineId(e.target.value)}>{pipelines.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
       <button type="button" className="filter" disabled={loading} onClick={() => setClientDirectory('list')}>Компании</button>
       <button type="button" className="filter" disabled={loading} onClick={() => setContactDirectory({})}>Контакты</button>
+      <button type="button" className="filter" disabled={loading} aria-pressed={myDayOpen} onClick={() => setMyDayOpen(!myDayOpen)}>Мой день</button>
       {canManageStages && <button type="button" className="filter" onClick={() => setPipelineSettings(true)}>Управление воронками</button>}
       {canManageStages && pipeline && <button type="button" className="filter" onClick={() => setStageSettings(true)}>Настроить стадии</button>}
       <div className="search"><Search size={17}/><input aria-label="Поиск сделок" placeholder="Поиск по сделкам и клиентам" value={search} onChange={e => setSearch(e.target.value)}/></div>
@@ -362,6 +365,7 @@ export default function CRM() {
       <button className="filter" aria-pressed={followFilter === 'none'} onClick={() => setFollowFilter(followFilter === 'none' ? 'all' : 'none')}>Нет дел <b>{pipelineItems.filter(d => !d.follow_up_at).length}</b></button>
     </div>
     {error && <div role="alert" className="errorMessage">{error} <button disabled={busy || loading} onClick={() => setReload(n => n + 1)}>Повторить загрузку</button></div>}
+    {myDayOpen && workspaceId && !loading && <MyDay base={base} onOpenDeal={id => setSelectedId(id)}/>}
     {loading ? <p role="status">Загрузка CRM…</p> : !pipeline ? <p>Нет доступных воронок. Откройте «Настройки», чтобы создать студию, или попросите владельца добавить вас.</p> : <>
       {busy && <p role="status">Сохранение…</p>}
       {!filtered.length && <p className="muted">{items.length ? 'Нет сделок по выбранным условиям.' : 'Пока нет сделок. Создайте первую сделку.'}</p>}

@@ -79,6 +79,8 @@ beforeEach(() => {
       return response(item || {detail: 'Client not found'}, item ? 200 : 404);
     }
     if (url.includes('/deals?')) return response(stored);
+    if (url.endsWith('/my-day')) return response({tasks: taskRows.filter(item => item.assignee_user_id === 'u1' && item.status === 'OPEN').map(task => ({task, deal_title: stored.find(row => row.id === task.deal_id)?.title || ''})),
+      follow_ups: stored.filter(item => item.responsible_user_id === 'u1' && item.follow_up_at).map(item => ({deal_id: item.id, deal_title: item.title, at: item.follow_up_at, action: item.follow_up_action, comment: item.follow_up_comment}))});
     if (url.endsWith('/tasks')) {
       if (method === 'GET') return response(taskRows);
       const item: DealTask = {id: `task${taskRows.length + 1}`, workspace_id: 'w1', deal_id: 'd1', title: data.title,
@@ -366,6 +368,22 @@ describe('CRM persistence', () => {
     fireEvent.click(screen.getByRole('article', {name: 'Открыть Сайт клиента'}));
     expect(await screen.findByText('Подготовить и проверить ТЗ')).toBeTruthy();
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('shows assigned tasks and follow-ups in My Day and completes a task', async () => {
+    stored[0].responsible_user_id = 'u1';
+    taskRows = [{id: 'task1', workspace_id: 'w1', deal_id: 'd1', title: 'Позвонить клиенту', description: null,
+      priority: 'HIGH', status: 'OPEN', assignee_user_id: 'u1', created_by_user_id: 'u1', completed_by_user_id: null,
+      start_at: null, due_at: '2026-12-02T18:00:00Z', created_at: '2026-10-23T10:00:00Z', updated_at: '2026-10-23T10:00:00Z', completed_at: null}];
+    render(<CRM/>);
+    await screen.findByRole('article', {name: 'Открыть Сайт клиента'});
+    fireEvent.click(screen.getByRole('button', {name: 'Мой день'}));
+    const panel = await screen.findByRole('region', {name: 'Мой день'});
+    expect(within(panel).getByText('Позвонить клиенту')).toBeTruthy();
+    expect(within(panel).getByText(/Следующий контакт/)).toBeTruthy();
+    fireEvent.click(within(panel).getByRole('button', {name: 'Выполнено'}));
+    await waitFor(() => expect(taskRows[0].status).toBe('DONE'));
+    expect(within(panel).queryByText('Позвонить клиенту')).toBeNull();
   });
 
   it('deletes a deal and displays an empty state', async () => {
