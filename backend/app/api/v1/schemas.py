@@ -249,6 +249,58 @@ class DealActivityOut(Output):
     created_at: datetime
 
 
+class DealTaskCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: Name
+    description: str | None = Field(default=None, max_length=10000)
+    priority: Literal["LOW", "MEDIUM", "HIGH"] = "MEDIUM"
+    assignee_user_id: UUID | None = None
+    start_at: AwareDatetime | None = None
+    due_at: AwareDatetime | None = None
+
+    @model_validator(mode="after")
+    def check_dates(self):
+        if self.start_at and self.due_at and self.start_at > self.due_at:
+            raise ValueError("Дата начала задачи не может быть позже крайнего срока")
+        return self
+
+
+class DealTaskUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: Name | None = None
+    description: str | None = Field(default=None, max_length=10000)
+    priority: Literal["LOW", "MEDIUM", "HIGH"] | None = None
+    status: Literal["OPEN", "DONE"] | None = None
+    assignee_user_id: UUID | None = None
+    start_at: AwareDatetime | None = None
+    due_at: AwareDatetime | None = None
+
+    @model_validator(mode="after")
+    def reject_null_required(self):
+        for name in ("title", "priority", "status"):
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        return self
+
+
+class DealTaskOut(Output):
+    id: UUID
+    workspace_id: UUID
+    deal_id: UUID
+    title: str
+    description: str | None
+    priority: Literal["LOW", "MEDIUM", "HIGH"]
+    status: Literal["OPEN", "DONE"]
+    assignee_user_id: UUID | None
+    created_by_user_id: UUID | None
+    completed_by_user_id: UUID | None
+    start_at: datetime | None
+    due_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None
+
+
 class DealOut(Output):
     id: UUID
     workspace_id: UUID

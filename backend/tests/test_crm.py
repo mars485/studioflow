@@ -5,9 +5,68 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
+from app.core.security import hash_password
 from app.models import Deal, Pipeline, PipelineStage, User, WorkspaceMember
 
 pytestmark = pytest.mark.asyncio
+
+
+async def test_deal_tasks_are_scoped_and_keep_completion_actor(crm):
+    http, base = crm["http"], crm["base"]
+    deal_id = (await http.post(base + "/deals", json=crm["payload"])).json()["id"]
+    path = base + "/deals/" + deal_id + "/tasks"
+    payload = {"title": "  Подготовить ТЗ  ", "priority": "HIGH",
+        "assignee_user_id": str(crm["user"].id),
+        "start_at": "2026-10-23T10:00:00Z", "due_at": "2026-10-24T18:00:00Z"}
+    assert (await http.post(path, json={**payload, "due_at": "2026-10-22T18:00:00Z"})).status_code == 422
+    assert (await http.post(path, json={**payload, "assignee_user_id": str(uuid4())})).status_code == 422
+    created = await http.post(path, json=payload)
+    assert created.status_code == 201, created.text
+    task = created.json()
+    assert task["title"] == "Подготовить ТЗ" and task["status"] == "OPEN"
+    assert task["created_by_user_id"] == str(crm["user"].id)
+    task_path = path + "/" + task["id"]
+    assert (await http.patch(task_path, json={"due_at": "2026-10-22T18:00:00Z"})).status_code == 422
+    assert (await http.patch(task_path, json={"assignee_user_id": str(uuid4())})).status_code == 422
+    assert (await http.patch(task_path, json={"title": None})).status_code == 422
+    completed = await http.patch(task_path, json={"status": "DONE", "description": "Готово"})
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["completed_by_user_id"] == str(crm["user"].id)
+    assert completed.json()["completed_at"] is not None
+    assert (await http.get(path)).json()[0]["description"] == "Готово"
+    reopened = await http.patch(task_path, json={"status": "OPEN"})
+    assert reopened.status_code == 200 and reopened.json()["completed_at"] is None
+    other = f'/api/v1/workspaces/{crm["spaces"][1].id}/deals/{deal_id}/tasks'
+    assert (await http.get(other)).status_code == 404
+    assert (await http.post(other, json=payload)).status_code == 404
+    assert (await http.patch(other + "/" + task["id"], json={"status": "DONE"})).status_code == 404
+    member = await crm["db"].scalar(select(WorkspaceMember).where(WorkspaceMember.workspace_id == crm["spaces"][0].id))
+    member.role = "MANAGER"
+    await crm["db"].commit()
+    assert (await http.patch(task_path, json={"status": "DONE"})).status_code == 200
+    assert (await http.delete(task_path)).status_code == 403
+    member.role = "OWNER"
+    await crm["db"].commit()
+    assert (await http.delete(task_path)).status_code == 204
+    assert (await http.get(path)).json() == []
+    assert (await http.get(base + "/deals/" + deal_id)).status_code == 200
+
+
+async def test_removing_member_clears_deal_task_assignment(crm):
+    db, http, base = crm["db"], crm["http"], crm["base"]
+    member_user = User(id=uuid4(), email=f"{uuid4()}@example.com",
+                       password_hash=hash_password("test-password-123"), first_name="Коллега")
+    db.add(member_user)
+    await db.flush()
+    member = WorkspaceMember(workspace_id=crm["spaces"][0].id, user_id=member_user.id, role="MANAGER")
+    db.add(member)
+    await db.commit()
+    deal_id = (await http.post(base + "/deals", json=crm["payload"])).json()["id"]
+    task_path = base + "/deals/" + deal_id + "/tasks"
+    task = (await http.post(task_path, json={"title": "Передать задачу", "assignee_user_id": str(member_user.id)})).json()
+    assert (await http.delete(base + "/members/" + str(member.id))).status_code == 204
+    assert (await http.get(task_path)).json()[0]["assignee_user_id"] is None
+    assert (await http.get(task_path)).json()[0]["id"] == task["id"]
 
 
 async def test_deal_dates_validate_order_and_persist(crm):

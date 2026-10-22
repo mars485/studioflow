@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import CRM from './CRM';
-import {type Client, type Contact, type Deal, type FollowUpCompletion, type Pipeline, type Stage, localDateTime} from './api';
+import {type Client, type Contact, type Deal, type DealTask, type FollowUpCompletion, type Pipeline, type Stage, localDateTime} from './api';
 
 const deal: Deal = {id: 'd1', workspace_id: 'w1', title: 'Сайт клиента', client_id: 'c1', contact_id: null, pipeline_id: 'p1', stage_id: 's1',
   responsible_user_id: null, amount: '65000.25', currency: 'RUB', contact_name: 'Мария', source: 'Сайт', description: null,
@@ -18,9 +18,10 @@ let stages: Stage[];
 let pipelineRows: Pipeline[];
 let clientRows: Client[];
 let contactRows: Contact[];
+let taskRows: DealTask[];
 
 beforeEach(() => {
-  stored = [{...deal}]; notes = []; completed = []; failMutation = false; failLoad = false;
+  stored = [{...deal}]; notes = []; completed = []; taskRows = []; failMutation = false; failLoad = false;
   stages = [{id: 's1', pipeline_id: 'p1', name: 'Новый лид', position: 0, stage_type: 'OPEN', color: null}, {id: 's2', pipeline_id: 'p1', name: 'Контакт', position: 1, stage_type: 'OPEN', color: null}];
   pipelineRows = [{id: 'p1', name: 'Продажи', is_default: true, is_active: true, stages}];
   clientRows = [{id: 'c1', type: 'COMPANY', name: 'Клиент', phone: null, email: null, website: null, notes: null}];
@@ -78,6 +79,22 @@ beforeEach(() => {
       return response(item || {detail: 'Client not found'}, item ? 200 : 404);
     }
     if (url.includes('/deals?')) return response(stored);
+    if (url.endsWith('/tasks')) {
+      if (method === 'GET') return response(taskRows);
+      const item: DealTask = {id: `task${taskRows.length + 1}`, workspace_id: 'w1', deal_id: 'd1', title: data.title,
+        description: data.description, priority: data.priority, status: 'OPEN', assignee_user_id: data.assignee_user_id,
+        created_by_user_id: 'u1', completed_by_user_id: null, start_at: data.start_at, due_at: data.due_at,
+        created_at: '2026-10-23T10:00:00Z', updated_at: '2026-10-23T10:00:00Z', completed_at: null};
+      taskRows.push(item); return response(item, 201);
+    }
+    if (url.includes('/tasks/')) {
+      const id = url.split('/tasks/')[1]; const item = taskRows.find(row => row.id === id)!;
+      if (method === 'DELETE') {taskRows = taskRows.filter(row => row.id !== id); return response(null, 204);}
+      Object.assign(item, data);
+      item.completed_at = item.status === 'DONE' ? '2026-10-23T11:00:00Z' : null;
+      item.completed_by_user_id = item.status === 'DONE' ? 'u1' : null;
+      return response(item);
+    }
     if (url.endsWith('/follow-up/completions')) return response(completed);
     if (url.endsWith('/follow-up/complete') && method === 'POST') {
       const item: FollowUpCompletion = {id: `f${completed.length + 1}`, deal_id: 'd1', completed_by_user_id: 'u1', completed_by_name: 'Менеджер', scheduled_at: stored[0].follow_up_at!, action: stored[0].follow_up_action!, planned_comment: stored[0].follow_up_comment, outcome_comment: data.outcome_comment, completed_at: '2026-10-23T10:00:00Z'};
@@ -326,6 +343,29 @@ describe('CRM persistence', () => {
     await waitFor(() => expect(stored[0].start_date).toBe('2026-10-23'));
     expect(stored[0].end_date).toBe('2026-11-02');
     expect(screen.getByText('Сроки: 2026-10-23 — 2026-11-02')).toBeTruthy();
+  });
+
+  it('creates, edits and completes a task linked to the deal', async () => {
+    render(<CRM/>);
+    fireEvent.click(await screen.findByRole('article', {name: 'Открыть Сайт клиента'}));
+    await screen.findByText('Задач по сделке пока нет.');
+    fireEvent.change(screen.getByLabelText('Название задачи'), {target: {value: 'Подготовить ТЗ'}});
+    fireEvent.change(screen.getByLabelText('Исполнитель задачи'), {target: {value: 'u1'}});
+    fireEvent.change(screen.getByLabelText('Крайний срок'), {target: {value: '2026-12-03T18:00'}});
+    fireEvent.click(screen.getByRole('button', {name: 'Добавить задачу'}));
+    await screen.findByText('Подготовить ТЗ');
+    expect(taskRows[0].assignee_user_id).toBe('u1');
+    expect(taskRows[0].due_at).toBe(new Date('2026-12-03T18:00').toISOString());
+    fireEvent.click(screen.getByRole('button', {name: 'Изменить Подготовить ТЗ'}));
+    fireEvent.change(screen.getByLabelText('Название задачи'), {target: {value: 'Подготовить и проверить ТЗ'}});
+    fireEvent.click(screen.getByRole('button', {name: 'Сохранить задачу'}));
+    await screen.findByText('Подготовить и проверить ТЗ');
+    fireEvent.click(screen.getByRole('checkbox'));
+    await waitFor(() => expect(taskRows[0].status).toBe('DONE'));
+    fireEvent.click(screen.getByRole('button', {name: 'Закрыть'}));
+    fireEvent.click(screen.getByRole('article', {name: 'Открыть Сайт клиента'}));
+    expect(await screen.findByText('Подготовить и проверить ТЗ')).toBeTruthy();
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true);
   });
 
   it('deletes a deal and displays an empty state', async () => {

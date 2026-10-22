@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import current_user, workspace_access, workspace_admin
 from app.api.v1.schemas import WorkspaceOut
 from app.core.database import get_db
-from app.models import Deal, Pipeline, PipelineStage, User, Workspace, WorkspaceMember
+from app.models import Deal, DealTask, Pipeline, PipelineStage, User, Workspace, WorkspaceMember
 from app.models.entities import StageType
 
 router = APIRouter(prefix="/workspaces", tags=["Workspaces"])
@@ -162,6 +162,8 @@ async def remove_member(member_id: uuid.UUID, workspace_id: uuid.UUID = Depends(
     authorize_role(actor, member.role, None)
     await db.execute(update(Deal).where(Deal.workspace_id == workspace_id,
                                         Deal.responsible_user_id == member.user_id).values(responsible_user_id=None))
+    await db.execute(update(DealTask).where(DealTask.workspace_id == workspace_id,
+                                            DealTask.assignee_user_id == member.user_id).values(assignee_user_id=None))
     await db.delete(member)
     await db.commit()
     return Response(status_code=204)

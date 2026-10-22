@@ -4,6 +4,7 @@ import {type Action, type Client, type Contact, type Deal, type DealActivity, ty
   contactName, errorText, loadDeals, localDateTime, money, request} from './api';
 import ClientDirectory from './ClientDirectory';
 import ContactDirectory from './ContactDirectory';
+import DealTasks from './DealTasks';
 
 const actions: Record<Action, string> = {call: 'Позвонить', message: 'Написать в WhatsApp', proposal: 'Отправить КП', decision: 'Уточнить решение'};
 
@@ -146,8 +147,8 @@ function DealForm({deal, clients, contacts, members, pipelines, initialPipeline,
   </div>;
 }
 
-function DealDrawer({deal, client, contact, stage, responsibleName, base, busy, canDelete, onClose, onEdit, onDelete, onFollow, onComplete, onOpenClient, onOpenContact}: {
-  deal: Deal; client?: Client; contact?: Contact; stage?: string; responsibleName?: string; base: string; busy: boolean; canDelete: boolean;
+function DealDrawer({deal, client, contact, stage, responsibleName, base, members, busy, canDelete, onClose, onEdit, onDelete, onFollow, onComplete, onOpenClient, onOpenContact}: {
+  deal: Deal; client?: Client; contact?: Contact; stage?: string; responsibleName?: string; base: string; members: Member[]; busy: boolean; canDelete: boolean;
   onClose: () => void; onEdit: () => void; onDelete: () => Promise<void>;
   onFollow: (value: {at: string; action: Action; comment: string} | null) => Promise<void>;
   onComplete: (outcome: string) => Promise<FollowUpCompletion>;
@@ -221,6 +222,7 @@ function DealDrawer({deal, client, contact, stage, responsibleName, base, busy, 
     <div className="dealStatus"><span>{stage}</span><strong>{money(deal.amount, deal.currency)}</strong></div>
     <div className="quickActions"><button disabled={busy} onClick={onEdit}>Редактировать</button>{canDelete && <button disabled={busy} onClick={async () => {if (window.confirm('Удалить сделку?')) {try {await onDelete();} catch(e) {setError(errorText(e));}}}}>Удалить</button>}</div>
     <section className="drawerSection"><h3>Контакт</h3><p>{client && <button type="button" className="clientLink" onClick={onOpenClient}>{client.name}</button>}</p><p>{contact ? <button type="button" className="clientLink" onClick={onOpenContact}>{contactName(contact)}</button> : deal.contact_name || 'Контакт не указан'}</p><p>Ответственный: {responsibleName || 'Не назначен'}</p><p>Источник: {deal.source || 'Не указан'}</p><p>Сроки: {deal.start_date || '—'} — {deal.end_date || '—'}</p>{deal.description && <p>{deal.description}</p>}</section>
+    <DealTasks base={base} dealId={deal.id} members={members} canDelete={canDelete}/>
     <form className="drawerSection followEditor" onSubmit={e => {e.preventDefault(); void save();}}>
       <h3>Следующий контакт</h3><p className="muted">Дата и время в часовом поясе вашего устройства.</p>
       <fieldset disabled={busy}>
@@ -373,7 +375,7 @@ export default function CRM() {
         </section>;})}
       </div>
     </>}
-    {selected && <DealDrawer key={selected.id} base={base} canDelete={['OWNER', 'ADMIN'].includes(workspaces.find(w => w.id === workspaceId)?.role || '')} deal={selected} client={clients.find(c => c.id === selected.client_id)} contact={contacts.find(c => c.id === selected.contact_id)} stage={pipelines.flatMap(p => p.stages).find(s => s.id === selected.stage_id)?.name} responsibleName={members.find(m => m.user_id === selected.responsible_user_id)?.first_name} busy={busy}
+    {selected && <DealDrawer key={selected.id} base={base} members={members} canDelete={['OWNER', 'ADMIN'].includes(workspaces.find(w => w.id === workspaceId)?.role || '')} deal={selected} client={clients.find(c => c.id === selected.client_id)} contact={contacts.find(c => c.id === selected.contact_id)} stage={pipelines.flatMap(p => p.stages).find(s => s.id === selected.stage_id)?.name} responsibleName={members.find(m => m.user_id === selected.responsible_user_id)?.first_name} busy={busy}
       onClose={() => setSelectedId(null)} onEdit={() => {setFormError(''); setEditing(selected);}}
       onOpenClient={() => {setSelectedId(null); setClientDirectory(selected.client_id);}}
       onOpenContact={() => {setSelectedId(null); setContactDirectory({initialId: selected.contact_id || undefined});}}
