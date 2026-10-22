@@ -7,9 +7,10 @@ from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import current_user, workspace_access, workspace_admin
 from app.api.v1.schemas import (ClientCreate, ClientOut, DealCreate, DealOut,
-                                DealUpdate, DealActivityCreate, DealActivityOut, FollowUp, PipelineOut)
+                                DealUpdate, DealActivityCreate, DealActivityOut, FollowUp,
+                                FollowUpComplete, FollowUpCompleteResult, FollowUpCompletionOut, PipelineOut)
 from app.core.database import get_db
-from app.models import Client, Deal, DealActivity, Pipeline, PipelineStage, User, Workspace
+from app.models import Client, Deal, DealActivity, FollowUpCompletion, Pipeline, PipelineStage, User, Workspace
 
 router = APIRouter(tags=["CRM"])
 scoped = APIRouter(prefix="/workspaces/{workspace_id}")
@@ -42,6 +43,13 @@ async def create_client(data: ClientCreate, workspace_id: UUID = Depends(workspa
 
 async def find_deal(db: AsyncSession, workspace_id: UUID, deal_id: UUID) -> Deal:
     row = await db.scalar(select(Deal).where(Deal.id == deal_id, Deal.workspace_id == workspace_id))
+    if row is None:
+        raise HTTPException(404, "Deal not found")
+    return row
+
+
+async def lock_deal(db: AsyncSession, workspace_id: UUID, deal_id: UUID) -> Deal:
+    row = await db.scalar(select(Deal).where(Deal.id == deal_id, Deal.workspace_id == workspace_id).with_for_update())
     if row is None:
         raise HTTPException(404, "Deal not found")
     return row
@@ -89,9 +97,7 @@ async def get_deal(deal_id: UUID, workspace_id: UUID = Depends(workspace_access)
 @scoped.patch("/deals/{deal_id}", response_model=DealOut)
 async def update_deal(deal_id: UUID, data: DealUpdate, workspace_id: UUID = Depends(workspace_access),
                       user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    row = await db.scalar(select(Deal).where(Deal.id == deal_id, Deal.workspace_id == workspace_id).with_for_update())
-    if row is None:
-        raise HTTPException(404, "Deal not found")
+    row = await lock_deal(db, workspace_id, deal_id)
     changes = data.model_dump(exclude_unset=True)
     await validate_relations(db, workspace_id, changes.get("client_id", row.client_id),
                              changes.get("pipeline_id", row.pipeline_id), changes.get("stage_id", row.stage_id))
@@ -121,7 +127,7 @@ async def delete_deal(deal_id: UUID, workspace_id: UUID = Depends(workspace_admi
 @scoped.put("/deals/{deal_id}/follow-up", response_model=DealOut)
 async def save_follow_up(deal_id: UUID, data: FollowUp, workspace_id: UUID = Depends(workspace_access),
                          db: AsyncSession = Depends(get_db)):
-    row = await find_deal(db, workspace_id, deal_id)
+    row = await lock_deal(db, workspace_id, deal_id)
     row.follow_up_at, row.follow_up_action, row.follow_up_comment = data.at, data.action, data.comment
     await db.commit()
     await db.refresh(row)
@@ -131,11 +137,41 @@ async def save_follow_up(deal_id: UUID, data: FollowUp, workspace_id: UUID = Dep
 @scoped.delete("/deals/{deal_id}/follow-up", response_model=DealOut)
 async def clear_follow_up(deal_id: UUID, workspace_id: UUID = Depends(workspace_access),
                           db: AsyncSession = Depends(get_db)):
-    row = await find_deal(db, workspace_id, deal_id)
+    row = await lock_deal(db, workspace_id, deal_id)
     row.follow_up_at = row.follow_up_action = row.follow_up_comment = None
     await db.commit()
     await db.refresh(row)
     return row
+
+
+@scoped.get("/deals/{deal_id}/follow-up/completions", response_model=list[FollowUpCompletionOut])
+async def follow_up_completions(deal_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                                db: AsyncSession = Depends(get_db), limit: int = Query(100, ge=1, le=500),
+                                offset: int = Query(0, ge=0)):
+    await find_deal(db, workspace_id, deal_id)
+    return (await db.scalars(select(FollowUpCompletion).where(
+        FollowUpCompletion.workspace_id == workspace_id, FollowUpCompletion.deal_id == deal_id
+    ).order_by(FollowUpCompletion.completed_at.desc(), FollowUpCompletion.id.desc()).limit(limit).offset(offset))).all()
+
+
+@scoped.post("/deals/{deal_id}/follow-up/complete", response_model=FollowUpCompleteResult, status_code=201)
+async def complete_follow_up(deal_id: UUID, data: FollowUpComplete,
+                             workspace_id: UUID = Depends(workspace_access),
+                             user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    row = await lock_deal(db, workspace_id, deal_id)
+    if row.follow_up_at is None or row.follow_up_action is None:
+        raise HTTPException(409, "У сделки нет назначенного следующего действия")
+    completion = FollowUpCompletion(
+        workspace_id=workspace_id, deal_id=deal_id, completed_by_user_id=user.id,
+        completed_by_name=" ".join(filter(None, (user.first_name, user.last_name))),
+        scheduled_at=row.follow_up_at, action=row.follow_up_action,
+        planned_comment=row.follow_up_comment, outcome_comment=data.outcome_comment)
+    db.add(completion)
+    row.follow_up_at = row.follow_up_action = row.follow_up_comment = None
+    await db.commit()
+    await db.refresh(completion)
+    await db.refresh(row)
+    return {"completion": completion, "deal": row}
 
 
 @scoped.get("/deals/{deal_id}/activities", response_model=list[DealActivityOut])

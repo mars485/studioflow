@@ -39,4 +39,12 @@ test('registration through follow-up survives reload', async ({page}) => {
   await page.getByRole('article', {name: `Открыть ${deal}`}).click();
   await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByLabel('Комментарий')).toHaveValue('E2E follow-up');
   await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByText('E2E разговор с клиентом')).toBeVisible();
+  const reopened = page.getByRole('dialog', {name: 'Карточка сделки'});
+  await reopened.getByLabel('Итог контакта').fill('E2E контакт завершён');
+  await reopened.getByRole('button', {name: 'Отметить follow-up выполненным'}).click();
+  await expect(reopened.getByText('E2E контакт завершён')).toBeVisible();
+  await page.reload();
+  await page.getByRole('article', {name: `Открыть ${deal}`}).click();
+  await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByText('E2E контакт завершён')).toBeVisible();
+  await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: 'Отметить follow-up выполненным'})).toHaveCount(0);
 });
