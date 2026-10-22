@@ -102,7 +102,7 @@ function DealDrawer({deal, client, stage, base, busy, canDelete, onClose, onEdit
     {error && <p role="alert" className="errorMessage">{error}</p>}{status && <p role="status">{status}</p>}
     <section className="drawerSection activitySection"><h3>История действий</h3>
       {activityLoading ? <p role="status">Загрузка истории…</p> : activityError && !activities.length ? <p role="alert">{activityError} <button type="button" onClick={() => setActivityReload(n => n + 1)}>Повторить</button></p> : !activities.length ? <p className="muted">Записей пока нет.</p> :
-        <ol className="activityList">{activities.map(item => <li key={item.id}><strong>{item.author_name}</strong> · <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString('ru-RU')}</time><p>{item.body}</p></li>)}</ol>}
+        <ol className="activityList">{activities.map(item => <li key={item.id}><strong>{item.author_name}</strong> · <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString('ru-RU')}</time>{item.kind === 'STAGE_CHANGE' && <span className="activityKind">Смена стадии</span>}<p>{item.body}</p></li>)}</ol>}
       <form onSubmit={e => void addActivity(e)}><label>Новая заметка<textarea value={activityBody} maxLength={10000} onChange={e => setActivityBody(e.target.value)}/></label><button disabled={activityBusy || !activityBody.trim()}>{activityBusy ? 'Сохранение…' : 'Добавить в историю'}</button></form>
       {activityError && activities.length > 0 && <p role="alert" className="errorMessage">{activityError}</p>}
     </section>

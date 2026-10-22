@@ -88,11 +88,21 @@ async def get_deal(deal_id: UUID, workspace_id: UUID = Depends(workspace_access)
 
 @scoped.patch("/deals/{deal_id}", response_model=DealOut)
 async def update_deal(deal_id: UUID, data: DealUpdate, workspace_id: UUID = Depends(workspace_access),
-                      db: AsyncSession = Depends(get_db)):
-    row = await find_deal(db, workspace_id, deal_id)
+                      user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    row = await db.scalar(select(Deal).where(Deal.id == deal_id, Deal.workspace_id == workspace_id).with_for_update())
+    if row is None:
+        raise HTTPException(404, "Deal not found")
     changes = data.model_dump(exclude_unset=True)
     await validate_relations(db, workspace_id, changes.get("client_id", row.client_id),
                              changes.get("pipeline_id", row.pipeline_id), changes.get("stage_id", row.stage_id))
+    next_stage_id = changes.get("stage_id", row.stage_id)
+    if next_stage_id != row.stage_id:
+        stages = (await db.scalars(select(PipelineStage).where(
+            PipelineStage.workspace_id == workspace_id, PipelineStage.id.in_([row.stage_id, next_stage_id])))).all()
+        names = {stage.id: stage.name for stage in stages}
+        db.add(DealActivity(workspace_id=workspace_id, deal_id=deal_id, author_user_id=user.id,
+                            author_name=" ".join(filter(None, (user.first_name, user.last_name))),
+                            kind="STAGE_CHANGE", body=f"Стадия: {names[row.stage_id]} → {names[next_stage_id]}"))
     for name, value in changes.items():
         setattr(row, name, value)
     await db.commit()

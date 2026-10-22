@@ -96,6 +96,7 @@ class DealActivityOut(Output):
     author_user_id: UUID | None
     author_name: str
     body: str
+    kind: Literal["NOTE", "STAGE_CHANGE"]
     created_at: datetime
 
 

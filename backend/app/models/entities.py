@@ -124,6 +124,7 @@ class DealActivity(Base):
     __table_args__ = (
         ForeignKeyConstraint(["workspace_id", "deal_id"], ["deals.workspace_id", "deals.id"], name="fk_activities_workspace_deal", ondelete="CASCADE"),
         CheckConstraint("length(trim(body)) > 0", name="ck_activities_body_not_blank"),
+        CheckConstraint("kind IN ('NOTE', 'STAGE_CHANGE')", name="ck_activities_kind"),
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
@@ -131,5 +132,6 @@ class DealActivity(Base):
     author_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     author_name: Mapped[str] = mapped_column(String(255))
     body: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(20), default="NOTE", server_default="NOTE")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

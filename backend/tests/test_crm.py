@@ -28,6 +28,21 @@ async def test_deal_activity_is_persistent_and_workspace_scoped(crm):
     assert (await http.get(path)).status_code == 404
 
 
+async def test_stage_change_is_recorded_once_with_author_and_stage_names(crm):
+    http, base = crm["http"], crm["base"]
+    deal = (await http.post(base + "/deals", json=crm["payload"])).json()
+    path = base + "/deals/" + deal["id"]
+    changed = await http.patch(path, json={"stage_id": str(crm["next"].id)})
+    assert changed.status_code == 200, changed.text
+    assert (await http.patch(path, json={"stage_id": str(crm["next"].id)})).status_code == 200
+    assert (await http.patch(path, json={"title": "New title"})).status_code == 200
+    activities = (await http.get(path + "/activities")).json()
+    assert len(activities) == 1
+    assert activities[0]["kind"] == "STAGE_CHANGE"
+    assert activities[0]["body"] == "Стадия: Stage 0 → Next"
+    assert activities[0]["author_user_id"] == str(crm["user"].id)
+
+
 async def test_crud_and_follow_up_persist(crm):
     http, base = crm["http"], crm["base"]
     assert len((await http.get("/api/v1/workspaces")).json()) == 1
