@@ -43,6 +43,30 @@ async def test_stage_change_is_recorded_once_with_author_and_stage_names(crm):
     assert activities[0]["author_user_id"] == str(crm["user"].id)
 
 
+async def test_completed_follow_up_is_archived_once_and_workspace_scoped(crm):
+    http, base = crm["http"], crm["base"]
+    deal = (await http.post(base + "/deals", json=crm["payload"])).json()
+    path = base + "/deals/" + deal["id"] + "/follow-up"
+    assert (await http.post(path + "/complete", json={})).status_code == 409
+    scheduled = {"at": "2026-12-01T16:30:00+05:00", "action": "call", "comment": "Обсудить бюджет"}
+    assert (await http.put(path, json=scheduled)).status_code == 200
+    finished = await http.post(path + "/complete", json={"outcome_comment": "Договорились о встрече"})
+    assert finished.status_code == 201, finished.text
+    result = finished.json()
+    assert result["deal"]["follow_up_at"] is None
+    assert result["completion"]["scheduled_at"] == "2026-12-01T11:30:00Z"
+    assert result["completion"]["action"] == "call"
+    assert result["completion"]["planned_comment"] == "Обсудить бюджет"
+    assert result["completion"]["outcome_comment"] == "Договорились о встрече"
+    assert result["completion"]["completed_by_user_id"] == str(crm["user"].id)
+    assert (await http.post(path + "/complete", json={})).status_code == 409
+    assert len((await http.get(path + "/completions")).json()) == 1
+    other = f'/api/v1/workspaces/{crm["spaces"][1].id}/deals/{deal["id"]}/follow-up'
+    assert (await http.get(other + "/completions")).status_code == 404
+    assert (await http.post(other + "/complete", json={})).status_code == 404
+    assert (await http.delete(base + "/deals/" + deal["id"])).status_code == 204
+
+
 async def test_crud_and_follow_up_persist(crm):
     http, base = crm["http"], crm["base"]
     assert len((await http.get("/api/v1/workspaces")).json()) == 1

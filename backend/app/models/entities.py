@@ -135,3 +135,21 @@ class DealActivity(Base):
     kind: Mapped[str] = mapped_column(String(20), default="NOTE", server_default="NOTE")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+
+class FollowUpCompletion(Base):
+    __tablename__ = "follow_up_completions"
+    __table_args__ = (
+        ForeignKeyConstraint(["workspace_id", "deal_id"], ["deals.workspace_id", "deals.id"], name="fk_completions_workspace_deal", ondelete="CASCADE"),
+        CheckConstraint("action IN ('call', 'message', 'proposal', 'decision')", name="ck_completions_action"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    deal_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    completed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    completed_by_name: Mapped[str] = mapped_column(String(255))
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    action: Mapped[str] = mapped_column(String(20))
+    planned_comment: Mapped[str | None] = mapped_column(Text)
+    outcome_comment: Mapped[str | None] = mapped_column(Text)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+

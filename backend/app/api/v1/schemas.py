@@ -85,6 +85,23 @@ class FollowUp(BaseModel):
     comment: str | None = Field(default=None, max_length=10000)
 
 
+class FollowUpComplete(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    outcome_comment: str | None = Field(default=None, max_length=10000)
+
+
+class FollowUpCompletionOut(Output):
+    id: UUID
+    deal_id: UUID
+    completed_by_user_id: UUID | None
+    completed_by_name: str
+    scheduled_at: datetime
+    action: Action
+    planned_comment: str | None
+    outcome_comment: str | None
+    completed_at: datetime
+
+
 class DealActivityCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     body: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=10000)]
@@ -117,3 +134,8 @@ class DealOut(Output):
     follow_up_comment: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class FollowUpCompleteResult(Output):
+    completion: FollowUpCompletionOut
+    deal: DealOut

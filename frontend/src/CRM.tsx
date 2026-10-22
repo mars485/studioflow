@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState, type FormEvent} from 'react';
 import {CalendarClock, Plus, Search, X} from 'lucide-react';
-import {type Action, type Client, type Deal, type DealActivity, type DealInput, type Pipeline, type Workspace,
+import {type Action, type Client, type Deal, type DealActivity, type DealInput, type FollowUpCompletion, type Pipeline, type Workspace,
   errorText, loadDeals, localDateTime, money, request} from './api';
 
 const actions: Record<Action, string> = {call: 'Позвонить', message: 'Написать в WhatsApp', proposal: 'Отправить КП', decision: 'Уточнить решение'};
@@ -42,10 +42,11 @@ function DealForm({deal, clients, pipelines, initialPipeline, busy, error, onClo
   </div>;
 }
 
-function DealDrawer({deal, client, stage, base, busy, canDelete, onClose, onEdit, onDelete, onFollow}: {
+function DealDrawer({deal, client, stage, base, busy, canDelete, onClose, onEdit, onDelete, onFollow, onComplete}: {
   deal: Deal; client?: Client; stage?: string; base: string; busy: boolean; canDelete: boolean;
   onClose: () => void; onEdit: () => void; onDelete: () => Promise<void>;
   onFollow: (value: {at: string; action: Action; comment: string} | null) => Promise<void>;
+  onComplete: (outcome: string) => Promise<FollowUpCompletion>;
 }) {
   const [next, setNext] = useState(localDateTime(deal.follow_up_at));
   const [action, setAction] = useState<Action>(deal.follow_up_action || 'call');
@@ -58,6 +59,12 @@ function DealDrawer({deal, client, stage, base, busy, canDelete, onClose, onEdit
   const [activityBusy, setActivityBusy] = useState(false);
   const [activityError, setActivityError] = useState('');
   const [activityReload, setActivityReload] = useState(0);
+  const [completions, setCompletions] = useState<FollowUpCompletion[]>([]);
+  const [completionLoading, setCompletionLoading] = useState(true);
+  const [completionError, setCompletionError] = useState('');
+  const [completionReload, setCompletionReload] = useState(0);
+  const [outcome, setOutcome] = useState('');
+  const [completionBusy, setCompletionBusy] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     setActivityLoading(true); setActivityError('');
@@ -66,6 +73,14 @@ function DealDrawer({deal, client, stage, base, busy, canDelete, onClose, onEdit
       .catch(e => {if (!controller.signal.aborted) {setActivityError(errorText(e)); setActivityLoading(false);}});
     return () => controller.abort();
   }, [base, deal.id, activityReload]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setCompletionLoading(true); setCompletionError('');
+    request<FollowUpCompletion[]>(`${base}/deals/${deal.id}/follow-up/completions`, 'GET', undefined, controller.signal)
+      .then(rows => {if (!controller.signal.aborted) {setCompletions(rows); setCompletionLoading(false);}})
+      .catch(e => {if (!controller.signal.aborted) {setCompletionError(errorText(e)); setCompletionLoading(false);}});
+    return () => controller.abort();
+  }, [base, deal.id, completionReload]);
   const addActivity = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!activityBody.trim() || activityBusy) return;
@@ -84,6 +99,17 @@ function DealDrawer({deal, client, stage, base, busy, canDelete, onClose, onEdit
       setStatus(clear ? 'Follow-up удалён' : 'Follow-up сохранён');
     } catch (e) {setError(errorText(e));}
   };
+  const complete = async () => {
+    if (completionBusy || busy) return;
+    setCompletionBusy(true); setCompletionError(''); setStatus('');
+    try {
+      const item = await onComplete(outcome.trim());
+      setCompletions(previous => [item, ...previous]);
+      setNext(''); setAction('call'); setComment(''); setOutcome('');
+      setStatus('Follow-up выполнен');
+    } catch(e) {setCompletionError(errorText(e));}
+    finally {setCompletionBusy(false);}
+  };
   return <div className="drawerBackdrop" onClick={() => !busy && onClose()}><aside className="drawer" role="dialog" aria-modal="true" aria-label="Карточка сделки" onClick={e => e.stopPropagation()}>
     <div className="drawerHead"><div><small>Сделка</small><h2>{deal.title}</h2></div><button aria-label="Закрыть" disabled={busy} onClick={onClose}><X size={20}/></button></div>
     <div className="dealStatus"><span>{stage}</span><strong>{money(deal.amount, deal.currency)}</strong></div>
@@ -99,6 +125,12 @@ function DealDrawer({deal, client, stage, base, busy, canDelete, onClose, onEdit
         {deal.follow_up_at && <button className="noteBtn" type="button" onClick={() => void save(true)}>Удалить follow-up</button>}
       </fieldset>
     </form>
+    {deal.follow_up_at && <section className="drawerSection completionSection"><label>Итог контакта<textarea maxLength={10000} value={outcome} onChange={e => setOutcome(e.target.value)} placeholder="Что удалось сделать"/></label><button type="button" disabled={busy || completionBusy} onClick={() => void complete()}>{completionBusy ? 'Сохранение…' : 'Отметить follow-up выполненным'}</button></section>}
+    <section className="drawerSection"><h3>Завершённые действия</h3>
+      {completionLoading ? <p role="status">Загрузка завершённых действий…</p> : completionError && !completions.length ? <p role="alert">{completionError} <button type="button" onClick={() => setCompletionReload(n => n + 1)}>Повторить</button></p> : completions.length ?
+        <ol className="activityList">{completions.map(item => <li key={item.id}><strong>{actions[item.action]}</strong> · {item.completed_by_name} · <time dateTime={item.completed_at}>{new Date(item.completed_at).toLocaleString('ru-RU')}</time><p>{item.outcome_comment || item.planned_comment || 'Без комментария'}</p></li>)}</ol> : <p className="muted">Завершённых действий пока нет.</p>}
+      {completionError && completions.length > 0 && <p role="alert" className="errorMessage">{completionError}</p>}
+    </section>
     {error && <p role="alert" className="errorMessage">{error}</p>}{status && <p role="status">{status}</p>}
     <section className="drawerSection activitySection"><h3>История действий</h3>
       {activityLoading ? <p role="status">Загрузка истории…</p> : activityError && !activities.length ? <p role="alert">{activityError} <button type="button" onClick={() => setActivityReload(n => n + 1)}>Повторить</button></p> : !activities.length ? <p className="muted">Записей пока нет.</p> :
@@ -211,7 +243,8 @@ export default function CRM() {
     {selected && <DealDrawer key={selected.id} base={base} canDelete={['OWNER', 'ADMIN'].includes(workspaces.find(w => w.id === workspaceId)?.role || '')} deal={selected} client={clients.find(c => c.id === selected.client_id)} stage={pipelines.flatMap(p => p.stages).find(s => s.id === selected.stage_id)?.name} busy={busy}
       onClose={() => setSelectedId(null)} onEdit={() => {setFormError(''); setEditing(selected);}}
       onDelete={() => mutate(async () => {await request(`${base}/deals/${selected.id}`, 'DELETE'); setItems(prev => prev.filter(d => d.id !== selected.id)); setSelectedId(null);})}
-      onFollow={value => mutate(async () => replace(await request<Deal>(`${base}/deals/${selected.id}/follow-up`, value ? 'PUT' : 'DELETE', value || undefined)))}/>}
+      onFollow={value => mutate(async () => replace(await request<Deal>(`${base}/deals/${selected.id}/follow-up`, value ? 'PUT' : 'DELETE', value || undefined)))}
+      onComplete={async outcome => {let completion!: FollowUpCompletion; await mutate(async () => {const result = await request<{completion: FollowUpCompletion; deal: Deal}>(`${base}/deals/${selected.id}/follow-up/complete`, 'POST', {outcome_comment: outcome || null}); completion = result.completion; replace(result.deal);}); return completion;}}/>}
     {editing && <DealForm deal={editing === 'new' ? undefined : editing} clients={clients} pipelines={pipelines} initialPipeline={pipelineId} busy={busy} error={formError} onClose={() => setEditing(null)} onSave={saveDeal}/>}
   </>;
 }

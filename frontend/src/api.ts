@@ -20,6 +20,7 @@ export type Deal = {
 };
 export type DealInput = Pick<Deal, 'title' | 'client_id' | 'pipeline_id' | 'stage_id' | 'amount' | 'contact_name' | 'source' | 'description'>;
 export type DealActivity = {id: string; deal_id: string; author_user_id: string | null; author_name: string; body: string; kind: 'NOTE' | 'STAGE_CHANGE'; created_at: string};
+export type FollowUpCompletion = {id: string; deal_id: string; completed_by_user_id: string | null; completed_by_name: string; scheduled_at: string; action: Action; planned_comment: string | null; outcome_comment: string | null; completed_at: string};
 
 export async function request<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
