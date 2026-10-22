@@ -47,7 +47,19 @@ test('registration through follow-up survives reload', async ({page}) => {
   await company.getByLabel('Рабочий телефон').fill('+7 900 000-00-00');
   await company.getByRole('button', {name: 'Сохранить компанию'}).click();
   await expect(company.getByLabel('Рабочий телефон')).toHaveValue('+7 900 000-00-00');
-  await company.getByRole('button', {name: 'Закрыть'}).click();
+  await company.getByRole('button', {name: 'Добавить контакт'}).click();
+  const contacts = page.getByRole('dialog', {name: 'Контакты'});
+  await contacts.getByLabel('Имя').fill('Мария');
+  await contacts.getByLabel('Фамилия').fill('Иванова');
+  await contacts.getByRole('button', {name: 'Сохранить контакт'}).click();
+  await expect(contacts.getByRole('button', {name: 'Иванова Мария'})).toBeVisible();
+  await contacts.getByRole('button', {name: 'Закрыть'}).click();
+  await card.click();
+  await page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: 'Редактировать'}).click();
+  await page.getByRole('dialog', {name: 'Редактирование сделки'}).getByLabel('Связанный контакт').selectOption({label: 'Иванова Мария'});
+  await page.getByRole('dialog', {name: 'Редактирование сделки'}).getByRole('button', {name: 'Сохранить сделку'}).click();
+  await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: 'Иванова Мария'})).toBeVisible();
+  await page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: 'Закрыть'}).click();
   const stage = page.locator('.kanbanCol').nth(1);
   await card.dragTo(stage);
   await expect(stage.getByRole('article', {name: `Открыть ${deal}`})).toBeVisible();
@@ -68,6 +80,7 @@ test('registration through follow-up survives reload', async ({page}) => {
   await expect(page.getByRole('dialog', {name: 'Компании'}).getByLabel('Рабочий телефон')).toHaveValue('+7 900 000-00-00');
   await page.getByRole('dialog', {name: 'Компании'}).getByRole('button', {name: 'Закрыть'}).click();
   await page.getByRole('article', {name: `Открыть ${deal}`}).click();
+  await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: 'Иванова Мария'})).toBeVisible();
   await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByLabel('Комментарий')).toHaveValue('E2E follow-up');
   await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByText('E2E разговор с клиентом')).toBeVisible();
   const reopened = page.getByRole('dialog', {name: 'Карточка сделки'});

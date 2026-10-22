@@ -45,6 +45,44 @@ async def test_company_profile_search_deals_and_workspace_access(crm):
     assert (await http.delete(path + "/" + company["id"])).status_code == 403
 
 
+async def test_contact_company_links_and_deal_contact_are_scoped(crm):
+    http, base = crm["http"], crm["base"]
+    company_id = str(crm["clients"][0].id)
+    second = (await http.post(base + "/clients", json={"name": "Вторая компания"})).json()["id"]
+    path = base + "/contacts"
+    foreign_id = str(crm["clients"][1].id)
+    assert (await http.post(path, json={"first_name": "Мария", "client_ids": [foreign_id]})).status_code == 422
+    assert (await http.post(path, json={"first_name": "Мария", "client_ids": [company_id, company_id]})).status_code == 422
+    created = await http.post(path, json={"first_name": "Мария", "last_name": "Иванова",
+        "phone": "+7 900 000-00-00", "email": "maria@example.com", "client_ids": [company_id, second]})
+    assert created.status_code == 201, created.text
+    contact = created.json()
+    assert set(contact["client_ids"]) == {company_id, second}
+    assert [row["id"] for row in (await http.get(path + "?search=Иванова")).json()] == [contact["id"]]
+    assert [row["id"] for row in (await http.get(base + "/clients/" + second + "/contacts")).json()] == [contact["id"]]
+    assert (await http.get(path + "/" + contact["id"])).json()["email"] == "maria@example.com"
+    deal = await http.post(base + "/deals", json={**crm["payload"], "contact_id": contact["id"]})
+    assert deal.status_code == 201, deal.text
+    assert deal.json()["contact_name"] == "Иванова Мария"
+    assert deal.json()["contact_id"] == contact["id"]
+    assert [row["id"] for row in (await http.get(path + "/" + contact["id"] + "/deals")).json()] == [deal.json()["id"]]
+    assert (await http.patch(path + "/" + contact["id"], json={"client_ids": [second]})).status_code == 409
+    assert (await http.delete(path + "/" + contact["id"])).status_code == 409
+    other_contact = (await http.post(path, json={"first_name": "Другой", "client_ids": [second]})).json()
+    assert (await http.patch(base + "/deals/" + deal.json()["id"], json={"contact_id": other_contact["id"]})).status_code == 422
+    assert (await http.delete(path + "/" + other_contact["id"])).status_code == 204
+    assert (await http.get(path + "/" + other_contact["id"])).status_code == 404
+    other = f'/api/v1/workspaces/{crm["spaces"][1].id}/contacts/{contact["id"]}'
+    assert (await http.get(other)).status_code == 404
+    assert (await http.patch(other, json={"first_name": "Чужая"})).status_code == 404
+    assert (await http.delete(other)).status_code == 404
+    member = await crm["db"].scalar(select(WorkspaceMember).where(WorkspaceMember.workspace_id == crm["spaces"][0].id))
+    member.role = "MANAGER"
+    await crm["db"].commit()
+    assert (await http.patch(path + "/" + contact["id"], json={"phone": None})).status_code == 200
+    assert (await http.delete(path + "/" + contact["id"])).status_code == 403
+
+
 async def test_pipeline_lifecycle_preserves_deals_and_workspace_access(crm):
     http, base = crm["http"], crm["base"]
     path = base + "/pipelines"
