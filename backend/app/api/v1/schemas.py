@@ -70,7 +70,18 @@ class PipelineOut(Output):
     id: UUID
     name: str
     is_default: bool
+    is_active: bool
     stages: list[StageOut]
+
+
+class PipelineCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: Name
+
+
+class PipelineUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: Name
 
 
 class DealCreate(BaseModel):

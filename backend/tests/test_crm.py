@@ -10,6 +10,49 @@ from app.models import Deal, Pipeline, PipelineStage, User, WorkspaceMember
 pytestmark = pytest.mark.asyncio
 
 
+async def test_pipeline_lifecycle_preserves_deals_and_workspace_access(crm):
+    http, base = crm["http"], crm["base"]
+    path = base + "/pipelines"
+    assert (await http.post(path, json={"name": " "})).status_code == 422
+    created = await http.post(path, json={"name": "  Поддержка  "})
+    assert created.status_code == 201, created.text
+    second = created.json()
+    assert second["name"] == "Поддержка" and second["is_active"] and not second["is_default"]
+    assert len(second["stages"]) == 4
+    assert [stage["stage_type"] for stage in second["stages"]] == ["OPEN", "OPEN", "WON", "LOST"]
+    assert len((await http.get(path)).json()) == 2
+    assert (await http.patch(path + "/" + second["id"], json={"name": "Сопровождение"})).json()["name"] == "Сопровождение"
+    assert (await http.post(path + "/" + second["id"] + "/default")).json()["is_default"]
+    assert (await http.get(path)).json()[0]["id"] == second["id"]
+    first_id = str(crm["pipelines"][0].id)
+    assert (await http.post(path + "/" + second["id"] + "/deactivate")).json()["is_active"] is False
+    assert [item["id"] for item in (await http.get(path)).json()] == [first_id]
+    assert (await http.get(path + "?include_inactive=true")).json()[-1]["id"] == second["id"]
+    assert (await http.post(path + "/" + second["id"] + "/default")).status_code == 409
+    assert (await http.post(path + "/" + second["id"] + "/activate")).json()["is_active"]
+    assert (await http.delete(path + "/" + second["id"])).status_code == 204
+    assert len((await http.get(path)).json()) == 1
+    assert (await http.delete(path + "/" + first_id)).status_code == 409
+
+    used = (await http.post(path, json={"name": "Проекты"})).json()
+    deal = await http.post(base + "/deals", json={**crm["payload"],
+        "pipeline_id": used["id"], "stage_id": used["stages"][0]["id"]})
+    assert deal.status_code == 201, deal.text
+    assert (await http.delete(path + "/" + used["id"])).status_code == 409
+    assert (await http.post(path + "/" + used["id"] + "/deactivate")).status_code == 200
+    assert (await http.get(base + "/deals/" + deal.json()["id"])).json()["pipeline_id"] == used["id"]
+    assert (await http.post(path + "/" + used["id"] + "/activate")).status_code == 200
+
+    other = f'/api/v1/workspaces/{crm["spaces"][1].id}/pipelines'
+    assert (await http.post(other, json={"name": "Intrusion"})).status_code == 404
+    assert (await http.patch(other + "/" + used["id"], json={"name": "Intrusion"})).status_code == 404
+    member = await crm["db"].scalar(select(WorkspaceMember).where(WorkspaceMember.workspace_id == crm["spaces"][0].id))
+    member.role = "MANAGER"
+    await crm["db"].commit()
+    assert (await http.post(path, json={"name": "Forbidden"})).status_code == 403
+    assert (await http.post(path + "/" + used["id"] + "/deactivate")).status_code == 403
+
+
 async def test_deal_activity_is_persistent_and_workspace_scoped(crm):
     http, base = crm["http"], crm["base"]
     deal = (await http.post(base + "/deals", json=crm["payload"])).json()

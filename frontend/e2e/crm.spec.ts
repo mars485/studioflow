@@ -14,6 +14,15 @@ test('registration through follow-up survives reload', async ({page}) => {
   await page.getByLabel('Название новой студии').fill(`E2E studio ${stamp}`);
   await page.getByRole('button', {name: 'Создать студию'}).click();
   await page.getByRole('button', {name: 'CRM', exact: true}).click();
+  await page.getByRole('button', {name: 'Управление воронками'}).click();
+  const pipelineSettings = page.getByRole('dialog', {name: 'Управление воронками'});
+  await pipelineSettings.getByLabel('Новая воронка').fill(`E2E воронка ${stamp}`);
+  await pipelineSettings.getByRole('button', {name: 'Создать воронку'}).click();
+  await expect(page.getByRole('combobox', {name: 'Воронка'})).toHaveValue(/.+/);
+  await expect(pipelineSettings.getByRole('button', {name: `Отключить E2E воронка ${stamp}`})).toBeVisible();
+  await pipelineSettings.getByRole('button', {name: `Отключить E2E воронка ${stamp}`}).click();
+  await expect(pipelineSettings.getByRole('button', {name: `Включить E2E воронка ${stamp}`})).toBeVisible();
+  await pipelineSettings.getByRole('button', {name: 'Закрыть'}).click();
   await page.getByRole('button', {name: 'Настроить стадии'}).click();
   const settings = page.getByRole('dialog', {name: 'Настройка стадий'});
   await settings.getByLabel('Новый этап').fill(`E2E этап ${stamp}`);

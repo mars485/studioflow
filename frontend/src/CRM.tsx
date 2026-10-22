@@ -51,6 +51,55 @@ function StageSettings({pipeline, base, onClose, onChanged}: {pipeline: Pipeline
   </section></div>;
 }
 
+function PipelineSettingsRow({pipeline, base, busy, run}: {pipeline: Pipeline; base: string; busy: boolean;
+  run: (operation: () => Promise<unknown>, selectId?: string) => Promise<void>}) {
+  const [name, setName] = useState(pipeline.name);
+  const path = `${base}/pipelines/${pipeline.id}`;
+  return <li className="pipelineSettingsRow"><label>Название воронки<input value={name} maxLength={255} onChange={e => setName(e.target.value)}/></label>
+    <span>{pipeline.is_active ? (pipeline.is_default ? 'Основная' : 'Активна') : 'Отключена'} · {pipeline.stages.length} этапа</span>
+    <div className="stageSettingsActions">
+      <button type="button" disabled={busy || !name.trim()} onClick={() => void run(() => request(path, 'PATCH', {name: name.trim()}))}>Сохранить {pipeline.name}</button>
+      {pipeline.is_active && !pipeline.is_default && <button type="button" disabled={busy} onClick={() => void run(() => request(`${path}/default`, 'POST'))}>Сделать основной</button>}
+      <button type="button" disabled={busy} onClick={() => void run(() => request(`${path}/${pipeline.is_active ? 'deactivate' : 'activate'}`, 'POST'))}>{pipeline.is_active ? 'Отключить' : 'Включить'} {pipeline.name}</button>
+      <button type="button" disabled={busy} onClick={() => void run(() => request(path, 'DELETE'))}>Удалить {pipeline.name}</button>
+    </div>
+  </li>;
+}
+
+function PipelineSettings({base, onClose, onChanged}: {base: string; onClose: () => void; onChanged: (selectId?: string) => Promise<void>}) {
+  const [rows, setRows] = useState<Pipeline[]>([]);
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const load = async () => setRows(await request<Pipeline[]>(`${base}/pipelines?include_inactive=true`));
+  useEffect(() => {
+    let active = true;
+    request<Pipeline[]>(`${base}/pipelines?include_inactive=true`).then(next => {if (active) setRows(next);})
+      .catch(e => {if (active) setError(errorText(e));}).finally(() => {if (active) setLoading(false);});
+    return () => {active = false;};
+  }, [base]);
+  const run = async (operation: () => Promise<unknown>, selectId?: string) => {
+    if (busy) return;
+    setBusy(true); setError('');
+    try {await operation(); await load(); await onChanged(selectId);} catch(e) {setError(errorText(e));}
+    finally {setBusy(false);}
+  };
+  const create = async () => {
+    if (!name.trim()) return;
+    let created: Pipeline | undefined;
+    await run(async () => {created = await request<Pipeline>(`${base}/pipelines`, 'POST', {name: name.trim()});}, undefined);
+    if (created) {setName(''); await onChanged(created.id);}
+  };
+  return <div className="modalBackdrop" onClick={() => !busy && onClose()}><section className="pipelineSettings dealModal" role="dialog" aria-modal="true" aria-label="Управление воронками" onClick={e => e.stopPropagation()}>
+    <div className="drawerHead"><h2>Воронки продаж</h2><button type="button" disabled={busy} aria-label="Закрыть" onClick={onClose}><X size={20}/></button></div>
+    <p className="muted">Воронка со сделками сохраняется при отключении. Удалить её нельзя.</p>
+    {error && <p role="alert" className="errorMessage">{error} <button type="button" onClick={() => {setLoading(true); setError(''); void load().catch(e => setError(errorText(e))).finally(() => setLoading(false));}}>Повторить</button></p>}
+    {loading ? <p role="status">Загрузка воронок…</p> : <ol className="stageSettingsList">{rows.map(row => <PipelineSettingsRow key={row.id} pipeline={row} base={base} busy={busy} run={run}/>)}</ol>}
+    <form onSubmit={e => {e.preventDefault(); void create();}}><label>Новая воронка<input value={name} maxLength={255} onChange={e => setName(e.target.value)}/></label><button disabled={busy || !name.trim()}>Создать воронку</button></form>
+  </section></div>;
+}
+
 function DealForm({deal, clients, members, pipelines, initialPipeline, busy, error, onClose, onSave}: {
   deal?: Deal; clients: Client[]; members: Member[]; pipelines: Pipeline[]; initialPipeline: string;
   busy: boolean; error: string; onClose: () => void;
@@ -209,11 +258,12 @@ export default function CRM() {
   const [search, setSearch] = useState('');
   const [followFilter, setFollowFilter] = useState<'all' | 'today' | 'overdue' | 'none'>('all');
   const [stageSettings, setStageSettings] = useState(false);
+  const [pipelineSettings, setPipelineSettings] = useState(false);
   const base = `/workspaces/${workspaceId}`;
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true); setError(''); setItems([]); setClients([]); setMembers([]); setPipelines([]); setSelectedId(null); setEditing(null); setStageSettings(false);
+    setLoading(true); setError(''); setItems([]); setClients([]); setMembers([]); setPipelines([]); setSelectedId(null); setEditing(null); setStageSettings(false); setPipelineSettings(false);
     const load = async () => {
       try {
         const spaces = await request<Workspace[]>('/workspaces', 'GET', undefined, controller.signal);
@@ -265,7 +315,11 @@ export default function CRM() {
   };
   const pipeline = pipelines.find(p => p.id === pipelineId);
   const canManageStages = ['OWNER', 'ADMIN'].includes(workspaces.find(w => w.id === workspaceId)?.role || '');
-  const refreshPipelines = async () => setPipelines(await request<Pipeline[]>(`${base}/pipelines`));
+  const refreshPipelines = async (selectId?: string) => {
+    const next = await request<Pipeline[]>(`${base}/pipelines`);
+    setPipelines(next);
+    setPipelineId(selectId || (next.some(row => row.id === pipelineId) ? pipelineId : next[0]?.id || ''));
+  };
   const selected = items.find(d => d.id === selectedId);
   const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
   const startOfTomorrow = new Date(startOfToday); startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
@@ -281,6 +335,7 @@ export default function CRM() {
     <div className="crmTools">
       <select aria-label="Рабочее пространство" disabled={loading || busy} value={workspaceId} onChange={e => setWorkspaceId(e.target.value)}>{workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
       <select aria-label="Воронка" disabled={loading || busy} value={pipelineId} onChange={e => setPipelineId(e.target.value)}>{pipelines.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+      {canManageStages && <button type="button" className="filter" onClick={() => setPipelineSettings(true)}>Управление воронками</button>}
       {canManageStages && pipeline && <button type="button" className="filter" onClick={() => setStageSettings(true)}>Настроить стадии</button>}
       <div className="search"><Search size={17}/><input aria-label="Поиск сделок" placeholder="Поиск по сделкам и клиентам" value={search} onChange={e => setSearch(e.target.value)}/></div>
       <button className="filter" aria-pressed={followFilter === 'today'} onClick={() => setFollowFilter(followFilter === 'today' ? 'all' : 'today')}><CalendarClock size={17}/>Follow-up сегодня <b>{pipelineItems.filter(isToday).length}</b></button>
@@ -308,5 +363,6 @@ export default function CRM() {
       onComplete={async outcome => {let completion!: FollowUpCompletion; await mutate(async () => {const result = await request<{completion: FollowUpCompletion; deal: Deal}>(`${base}/deals/${selected.id}/follow-up/complete`, 'POST', {outcome_comment: outcome || null}); completion = result.completion; replace(result.deal);}); return completion;}}/>}
     {editing && <DealForm deal={editing === 'new' ? undefined : editing} clients={clients} members={members} pipelines={pipelines} initialPipeline={pipelineId} busy={busy} error={formError} onClose={() => setEditing(null)} onSave={saveDeal}/>}
     {stageSettings && pipeline && <StageSettings pipeline={pipeline} base={base} onClose={() => setStageSettings(false)} onChanged={refreshPipelines}/>}
+    {pipelineSettings && <PipelineSettings base={base} onClose={() => setPipelineSettings(false)} onChanged={refreshPipelines}/>}
   </>;
 }

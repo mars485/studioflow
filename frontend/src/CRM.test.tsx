@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import CRM from './CRM';
-import {type Deal, type FollowUpCompletion, type Stage, localDateTime} from './api';
+import {type Deal, type FollowUpCompletion, type Pipeline, type Stage, localDateTime} from './api';
 
 const deal: Deal = {id: 'd1', workspace_id: 'w1', title: 'Сайт клиента', client_id: 'c1', pipeline_id: 'p1', stage_id: 's1',
   responsible_user_id: null, amount: '65000.25', currency: 'RUB', contact_name: 'Мария', source: 'Сайт', description: null,
@@ -14,23 +14,36 @@ let failMutation: boolean;
 let failLoad: boolean;
 let fetchMock: ReturnType<typeof vi.fn>;
 let stages: Stage[];
+let pipelineRows: Pipeline[];
 
 beforeEach(() => {
   stored = [{...deal}]; notes = []; completed = []; failMutation = false; failLoad = false;
   stages = [{id: 's1', pipeline_id: 'p1', name: 'Новый лид', position: 0, stage_type: 'OPEN', color: null}, {id: 's2', pipeline_id: 'p1', name: 'Контакт', position: 1, stage_type: 'OPEN', color: null}];
+  pipelineRows = [{id: 'p1', name: 'Продажи', is_default: true, is_active: true, stages}];
   fetchMock = vi.fn(async (url: string, options: RequestInit = {}) => {
     const method = options.method || 'GET';
     const data = options.body ? JSON.parse(String(options.body)) : null;
     const response = (body: unknown, status = 200) => new Response(status === 204 ? null : JSON.stringify(body), {status, headers: {'Content-Type': 'application/json'}});
     if (failLoad || (method !== 'GET' && failMutation)) return response({detail: 'Server unavailable'}, 503);
     if (url === '/api/v1/workspaces') return response([{id: 'w1', name: 'Studio', role: 'OWNER', currency: 'RUB', timezone: 'Asia/Yekaterinburg'}]);
-    if (url.endsWith('/pipelines')) return response([{id: 'p1', name: 'Продажи', is_default: true, stages}]);
+    if (url.endsWith('/pipelines') && method === 'POST') {const item: Pipeline = {id: 'p2', name: data.name, is_default: false, is_active: true,
+      stages: [{id: 's3', pipeline_id: 'p2', name: 'Новый лид', position: 0, stage_type: 'OPEN', color: null}]}; pipelineRows.push(item); return response(item, 201);}
+    if (url.endsWith('/pipelines') || url.includes('/pipelines?include_inactive=')) return response(pipelineRows.filter(row => url.includes('include_inactive=true') || row.is_active));
+    if (url.includes('/pipelines/') && !url.includes('/stages')) {
+      const pipelineId = url.split('/pipelines/')[1].split('/')[0];
+      const row = pipelineRows.find(item => item.id === pipelineId)!;
+      if (method === 'PATCH') {row.name = data.name; return response(row);}
+      if (method === 'POST' && url.endsWith('/default')) {pipelineRows.forEach(item => item.is_default = item.id === pipelineId); return response(row);}
+      if (method === 'POST' && url.endsWith('/deactivate')) {row.is_active = false; row.is_default = false; pipelineRows[0].is_default = true; return response(row);}
+      if (method === 'POST' && url.endsWith('/activate')) {row.is_active = true; return response(row);}
+      if (method === 'DELETE') {pipelineRows = pipelineRows.filter(item => item.id !== pipelineId); return response(null, 204);}
+    }
     if (url.includes('/pipelines/p1/stages')) {
-      if (method === 'POST') {const stage: Stage = {id: `s${stages.length + 1}`, pipeline_id: 'p1', name: data.name, position: stages.length, stage_type: data.stage_type || 'OPEN', color: data.color || null}; stages.push(stage); return response(stage, 201);}
-      if (method === 'PUT') {stages = data.ids.map((id: string, position: number) => ({...stages.find(stage => stage.id === id)!, position})); return response(stages);}
+      if (method === 'POST') {const stage: Stage = {id: `s${stages.length + 1}`, pipeline_id: 'p1', name: data.name, position: stages.length, stage_type: data.stage_type || 'OPEN', color: data.color || null}; stages.push(stage); pipelineRows[0].stages = stages; return response(stage, 201);}
+      if (method === 'PUT') {stages = data.ids.map((id: string, position: number) => ({...stages.find(stage => stage.id === id)!, position})); pipelineRows[0].stages = stages; return response(stages);}
       const id = url.split('/').at(-1);
       if (method === 'PATCH') {const index = stages.findIndex(stage => stage.id === id); stages[index] = {...stages[index], ...data}; return response(stages[index]);}
-      if (method === 'DELETE') {stages = stages.filter(stage => stage.id !== id).map((stage, position) => ({...stage, position})); return response(null, 204);}
+      if (method === 'DELETE') {stages = stages.filter(stage => stage.id !== id).map((stage, position) => ({...stage, position})); pipelineRows[0].stages = stages; return response(null, 204);}
     }
     if (url.endsWith('/members')) return response([{id: 'm1', user_id: 'u1', email: 'manager@example.com', first_name: 'Менеджер', role: 'MANAGER'}]);
     if (url.endsWith('/clients')) return response([{id: 'c1', name: 'Клиент'}]);
@@ -61,6 +74,25 @@ beforeEach(() => {
 afterEach(() => {cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks();});
 
 describe('CRM persistence', () => {
+  it('creates a second pipeline and keeps a draft after an API error', async () => {
+    render(<CRM/>);
+    await screen.findByRole('article', {name: 'Открыть Сайт клиента'});
+    fireEvent.click(screen.getByRole('button', {name: 'Управление воронками'}));
+    const dialog = screen.getByRole('dialog', {name: 'Управление воронками'});
+    await within(dialog).findByLabelText('Новая воронка');
+    fireEvent.change(within(dialog).getByLabelText('Новая воронка'), {target: {value: 'Сопровождение'}});
+    failMutation = true;
+    fireEvent.click(within(dialog).getByRole('button', {name: 'Создать воронку'}));
+    await within(dialog).findByRole('alert');
+    expect((within(dialog).getByLabelText('Новая воронка') as HTMLInputElement).value).toBe('Сопровождение');
+    failMutation = false;
+    fireEvent.click(within(dialog).getByRole('button', {name: 'Создать воронку'}));
+    await waitFor(() => expect(pipelineRows).toHaveLength(2));
+    await waitFor(() => expect((screen.getByRole('combobox', {name: 'Воронка'}) as HTMLSelectElement).value).toBe('p2'));
+    fireEvent.click(within(dialog).getByRole('button', {name: 'Отключить Сопровождение'}));
+    await waitFor(() => expect((screen.getByRole('combobox', {name: 'Воронка'}) as HTMLSelectElement).value).toBe('p1'));
+    expect(screen.getByRole('article', {name: 'Открыть Сайт клиента'})).toBeTruthy();
+  });
   it('lets an owner add and reorder stages while preserving the draft on failure', async () => {
     render(<CRM/>);
     await screen.findByRole('article', {name: 'Открыть Сайт клиента'});

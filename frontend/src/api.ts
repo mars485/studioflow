@@ -9,7 +9,7 @@ export class ApiError extends Error {
 }
 export type Client = {id: string; name: string};
 export type Stage = {id: string; pipeline_id: string; name: string; position: number; stage_type: 'OPEN' | 'WON' | 'LOST'; color: string | null};
-export type Pipeline = {id: string; name: string; is_default: boolean; stages: Stage[]};
+export type Pipeline = {id: string; name: string; is_default: boolean; is_active: boolean; stages: Stage[]};
 export type Action = 'call' | 'message' | 'proposal' | 'decision';
 export type Deal = {
   id: string; workspace_id: string; title: string; client_id: string;
