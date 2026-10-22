@@ -1,0 +1,43 @@
+name: P0 checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Migrations and backend tests
+        run: docker compose -p studioflow-ci-backend -f docker-compose.test.yml run --build --rm backend
+      - name: Stop isolated backend stack
+        if: always()
+        run: docker compose -p studioflow-ci-backend -f docker-compose.test.yml down --remove-orphans
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Frontend tests and build
+        run: docker compose -p studioflow-ci-frontend -f docker-compose.test.yml run --build --rm --no-deps frontend
+      - name: Stop isolated frontend stack
+        if: always()
+        run: docker compose -p studioflow-ci-frontend -f docker-compose.test.yml down --remove-orphans
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Browser acceptance test
+        run: docker compose -p studioflow-ci-e2e -f docker-compose.e2e.yml run --build --rm e2e
+      - name: Stop isolated browser stack
+        if: always()
+        run: docker compose -p studioflow-ci-e2e -f docker-compose.e2e.yml down --remove-orphans
