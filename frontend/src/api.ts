@@ -7,7 +7,7 @@ export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {super(message); this.status = status;}
 }
-export type Client = {id: string; name: string};
+export type Client = {id: string; type: string; name: string; phone: string | null; email: string | null; website: string | null; notes: string | null};
 export type Stage = {id: string; pipeline_id: string; name: string; position: number; stage_type: 'OPEN' | 'WON' | 'LOST'; color: string | null};
 export type Pipeline = {id: string; name: string; is_default: boolean; is_active: boolean; stages: Stage[]};
 export type Action = 'call' | 'message' | 'proposal' | 'decision';

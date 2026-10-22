@@ -2,6 +2,7 @@ import {useEffect, useRef, useState, type FormEvent} from 'react';
 import {CalendarClock, Plus, Search, X} from 'lucide-react';
 import {type Action, type Client, type Deal, type DealActivity, type DealInput, type FollowUpCompletion, type Member, type Pipeline, type Stage, type Workspace,
   errorText, loadDeals, localDateTime, money, request} from './api';
+import ClientDirectory from './ClientDirectory';
 
 const actions: Record<Action, string> = {call: 'Позвонить', message: 'Написать в WhatsApp', proposal: 'Отправить КП', decision: 'Уточнить решение'};
 
@@ -139,11 +140,12 @@ function DealForm({deal, clients, members, pipelines, initialPipeline, busy, err
   </div>;
 }
 
-function DealDrawer({deal, client, stage, responsibleName, base, busy, canDelete, onClose, onEdit, onDelete, onFollow, onComplete}: {
+function DealDrawer({deal, client, stage, responsibleName, base, busy, canDelete, onClose, onEdit, onDelete, onFollow, onComplete, onOpenClient}: {
   deal: Deal; client?: Client; stage?: string; responsibleName?: string; base: string; busy: boolean; canDelete: boolean;
   onClose: () => void; onEdit: () => void; onDelete: () => Promise<void>;
   onFollow: (value: {at: string; action: Action; comment: string} | null) => Promise<void>;
   onComplete: (outcome: string) => Promise<FollowUpCompletion>;
+  onOpenClient: () => void;
 }) {
   const [next, setNext] = useState(localDateTime(deal.follow_up_at));
   const [action, setAction] = useState<Action>(deal.follow_up_action || 'call');
@@ -211,7 +213,7 @@ function DealDrawer({deal, client, stage, responsibleName, base, busy, canDelete
     <div className="drawerHead"><div><small>Сделка</small><h2>{deal.title}</h2></div><button aria-label="Закрыть" disabled={busy} onClick={onClose}><X size={20}/></button></div>
     <div className="dealStatus"><span>{stage}</span><strong>{money(deal.amount, deal.currency)}</strong></div>
     <div className="quickActions"><button disabled={busy} onClick={onEdit}>Редактировать</button>{canDelete && <button disabled={busy} onClick={async () => {if (window.confirm('Удалить сделку?')) {try {await onDelete();} catch(e) {setError(errorText(e));}}}}>Удалить</button>}</div>
-    <section className="drawerSection"><h3>Контакт</h3><p>{client?.name}</p><p>{deal.contact_name || 'Контакт не указан'}</p><p>Ответственный: {responsibleName || 'Не назначен'}</p><p>Источник: {deal.source || 'Не указан'}</p>{deal.description && <p>{deal.description}</p>}</section>
+    <section className="drawerSection"><h3>Контакт</h3><p>{client && <button type="button" className="clientLink" onClick={onOpenClient}>{client.name}</button>}</p><p>{deal.contact_name || 'Контакт не указан'}</p><p>Ответственный: {responsibleName || 'Не назначен'}</p><p>Источник: {deal.source || 'Не указан'}</p>{deal.description && <p>{deal.description}</p>}</section>
     <form className="drawerSection followEditor" onSubmit={e => {e.preventDefault(); void save();}}>
       <h3>Следующий контакт</h3><p className="muted">Дата и время в часовом поясе вашего устройства.</p>
       <fieldset disabled={busy}>
@@ -259,11 +261,12 @@ export default function CRM() {
   const [followFilter, setFollowFilter] = useState<'all' | 'today' | 'overdue' | 'none'>('all');
   const [stageSettings, setStageSettings] = useState(false);
   const [pipelineSettings, setPipelineSettings] = useState(false);
+  const [clientDirectory, setClientDirectory] = useState<string | null>(null);
   const base = `/workspaces/${workspaceId}`;
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true); setError(''); setItems([]); setClients([]); setMembers([]); setPipelines([]); setSelectedId(null); setEditing(null); setStageSettings(false); setPipelineSettings(false);
+    setLoading(true); setError(''); setItems([]); setClients([]); setMembers([]); setPipelines([]); setSelectedId(null); setEditing(null); setStageSettings(false); setPipelineSettings(false); setClientDirectory(null);
     const load = async () => {
       try {
         const spaces = await request<Workspace[]>('/workspaces', 'GET', undefined, controller.signal);
@@ -320,6 +323,7 @@ export default function CRM() {
     setPipelines(next);
     setPipelineId(selectId || (next.some(row => row.id === pipelineId) ? pipelineId : next[0]?.id || ''));
   };
+  const refreshClients = async () => setClients(await request<Client[]>(`${base}/clients`));
   const selected = items.find(d => d.id === selectedId);
   const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
   const startOfTomorrow = new Date(startOfToday); startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
@@ -335,6 +339,7 @@ export default function CRM() {
     <div className="crmTools">
       <select aria-label="Рабочее пространство" disabled={loading || busy} value={workspaceId} onChange={e => setWorkspaceId(e.target.value)}>{workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
       <select aria-label="Воронка" disabled={loading || busy} value={pipelineId} onChange={e => setPipelineId(e.target.value)}>{pipelines.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+      <button type="button" className="filter" disabled={loading} onClick={() => setClientDirectory('list')}>Компании</button>
       {canManageStages && <button type="button" className="filter" onClick={() => setPipelineSettings(true)}>Управление воронками</button>}
       {canManageStages && pipeline && <button type="button" className="filter" onClick={() => setStageSettings(true)}>Настроить стадии</button>}
       <div className="search"><Search size={17}/><input aria-label="Поиск сделок" placeholder="Поиск по сделкам и клиентам" value={search} onChange={e => setSearch(e.target.value)}/></div>
@@ -358,11 +363,13 @@ export default function CRM() {
     </>}
     {selected && <DealDrawer key={selected.id} base={base} canDelete={['OWNER', 'ADMIN'].includes(workspaces.find(w => w.id === workspaceId)?.role || '')} deal={selected} client={clients.find(c => c.id === selected.client_id)} stage={pipelines.flatMap(p => p.stages).find(s => s.id === selected.stage_id)?.name} responsibleName={members.find(m => m.user_id === selected.responsible_user_id)?.first_name} busy={busy}
       onClose={() => setSelectedId(null)} onEdit={() => {setFormError(''); setEditing(selected);}}
+      onOpenClient={() => {setSelectedId(null); setClientDirectory(selected.client_id);}}
       onDelete={() => mutate(async () => {await request(`${base}/deals/${selected.id}`, 'DELETE'); setItems(prev => prev.filter(d => d.id !== selected.id)); setSelectedId(null);})}
       onFollow={value => mutate(async () => replace(await request<Deal>(`${base}/deals/${selected.id}/follow-up`, value ? 'PUT' : 'DELETE', value || undefined)))}
       onComplete={async outcome => {let completion!: FollowUpCompletion; await mutate(async () => {const result = await request<{completion: FollowUpCompletion; deal: Deal}>(`${base}/deals/${selected.id}/follow-up/complete`, 'POST', {outcome_comment: outcome || null}); completion = result.completion; replace(result.deal);}); return completion;}}/>}
     {editing && <DealForm deal={editing === 'new' ? undefined : editing} clients={clients} members={members} pipelines={pipelines} initialPipeline={pipelineId} busy={busy} error={formError} onClose={() => setEditing(null)} onSave={saveDeal}/>}
     {stageSettings && pipeline && <StageSettings pipeline={pipeline} base={base} onClose={() => setStageSettings(false)} onChanged={refreshPipelines}/>}
     {pipelineSettings && <PipelineSettings base={base} onClose={() => setPipelineSettings(false)} onChanged={refreshPipelines}/>}
+    {clientDirectory && <ClientDirectory clients={clients} base={base} initialId={clientDirectory === 'list' ? undefined : clientDirectory} canDelete={canManageStages} onClose={() => setClientDirectory(null)} onChanged={refreshClients} onOpenDeal={id => {setClientDirectory(null); setSelectedId(id);}}/>}
   </>;
 }

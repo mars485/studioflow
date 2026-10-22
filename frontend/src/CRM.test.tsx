@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import CRM from './CRM';
-import {type Deal, type FollowUpCompletion, type Pipeline, type Stage, localDateTime} from './api';
+import {type Client, type Deal, type FollowUpCompletion, type Pipeline, type Stage, localDateTime} from './api';
 
 const deal: Deal = {id: 'd1', workspace_id: 'w1', title: 'Сайт клиента', client_id: 'c1', pipeline_id: 'p1', stage_id: 's1',
   responsible_user_id: null, amount: '65000.25', currency: 'RUB', contact_name: 'Мария', source: 'Сайт', description: null,
@@ -15,11 +15,13 @@ let failLoad: boolean;
 let fetchMock: ReturnType<typeof vi.fn>;
 let stages: Stage[];
 let pipelineRows: Pipeline[];
+let clientRows: Client[];
 
 beforeEach(() => {
   stored = [{...deal}]; notes = []; completed = []; failMutation = false; failLoad = false;
   stages = [{id: 's1', pipeline_id: 'p1', name: 'Новый лид', position: 0, stage_type: 'OPEN', color: null}, {id: 's2', pipeline_id: 'p1', name: 'Контакт', position: 1, stage_type: 'OPEN', color: null}];
   pipelineRows = [{id: 'p1', name: 'Продажи', is_default: true, is_active: true, stages}];
+  clientRows = [{id: 'c1', type: 'COMPANY', name: 'Клиент', phone: null, email: null, website: null, notes: null}];
   fetchMock = vi.fn(async (url: string, options: RequestInit = {}) => {
     const method = options.method || 'GET';
     const data = options.body ? JSON.parse(String(options.body)) : null;
@@ -46,7 +48,18 @@ beforeEach(() => {
       if (method === 'DELETE') {stages = stages.filter(stage => stage.id !== id).map((stage, position) => ({...stage, position})); pipelineRows[0].stages = stages; return response(null, 204);}
     }
     if (url.endsWith('/members')) return response([{id: 'm1', user_id: 'u1', email: 'manager@example.com', first_name: 'Менеджер', role: 'MANAGER'}]);
-    if (url.endsWith('/clients')) return response([{id: 'c1', name: 'Клиент'}]);
+    if (url.endsWith('/clients')) {
+      if (method === 'POST') {const item: Client = {id: `c${clientRows.length + 1}`, type: 'COMPANY', name: data.name,
+        phone: data.phone || null, email: data.email || null, website: data.website || null, notes: data.notes || null}; clientRows.push(item); return response(item, 201);}
+      return response(clientRows);
+    }
+    if (url.includes('/clients/') && url.endsWith('/deals')) return response(stored.filter(item => item.client_id === url.split('/clients/')[1].split('/')[0]));
+    if (url.includes('/clients/')) {
+      const id = url.split('/clients/')[1].split('/')[0]; const item = clientRows.find(row => row.id === id);
+      if (method === 'PATCH') {Object.assign(item!, data); return response(item);}
+      if (method === 'DELETE') {clientRows = clientRows.filter(row => row.id !== id); return response(null, 204);}
+      return response(item || {detail: 'Client not found'}, item ? 200 : 404);
+    }
     if (url.includes('/deals?')) return response(stored);
     if (url.endsWith('/follow-up/completions')) return response(completed);
     if (url.endsWith('/follow-up/complete') && method === 'POST') {
@@ -74,6 +87,23 @@ beforeEach(() => {
 afterEach(() => {cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks();});
 
 describe('CRM persistence', () => {
+  it('opens a company from its deal and saves contact details without losing a failed draft', async () => {
+    render(<CRM/>);
+    fireEvent.click(await screen.findByRole('article', {name: 'Открыть Сайт клиента'}));
+    fireEvent.click(screen.getByRole('button', {name: 'Клиент'}));
+    const dialog = screen.getByRole('dialog', {name: 'Компании'});
+    await within(dialog).findByRole('button', {name: 'Сайт клиента'});
+    fireEvent.change(within(dialog).getByLabelText('Рабочий телефон'), {target: {value: '+7 900 123-45-67'}});
+    failMutation = true;
+    fireEvent.click(within(dialog).getByRole('button', {name: 'Сохранить компанию'}));
+    await within(dialog).findByRole('alert');
+    expect((within(dialog).getByLabelText('Рабочий телефон') as HTMLInputElement).value).toBe('+7 900 123-45-67');
+    failMutation = false;
+    fireEvent.click(within(dialog).getByRole('button', {name: 'Сохранить компанию'}));
+    await waitFor(() => expect(clientRows[0].phone).toBe('+7 900 123-45-67'));
+    fireEvent.click(within(dialog).getByRole('button', {name: 'Сайт клиента'}));
+    expect(await screen.findByRole('dialog', {name: 'Карточка сделки'})).toBeTruthy();
+  });
   it('creates a second pipeline and keeps a draft after an API error', async () => {
     render(<CRM/>);
     await screen.findByRole('article', {name: 'Открыть Сайт клиента'});

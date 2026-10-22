@@ -40,6 +40,14 @@ test('registration through follow-up survives reload', async ({page}) => {
   const card = page.getByRole('article', {name: `Открыть ${deal}`});
   await expect(card).toBeVisible();
   await expect(card).toContainText('Ответственный: E2E');
+  await card.click();
+  await page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: `E2E client ${stamp}`}).click();
+  const company = page.getByRole('dialog', {name: 'Компании'});
+  await expect(company.getByRole('button', {name: deal})).toBeVisible();
+  await company.getByLabel('Рабочий телефон').fill('+7 900 000-00-00');
+  await company.getByRole('button', {name: 'Сохранить компанию'}).click();
+  await expect(company.getByLabel('Рабочий телефон')).toHaveValue('+7 900 000-00-00');
+  await company.getByRole('button', {name: 'Закрыть'}).click();
   const stage = page.locator('.kanbanCol').nth(1);
   await card.dragTo(stage);
   await expect(stage.getByRole('article', {name: `Открыть ${deal}`})).toBeVisible();
@@ -55,6 +63,10 @@ test('registration through follow-up survives reload', async ({page}) => {
   await drawer.getByRole('button', {name: 'Добавить в историю'}).click();
   await expect(drawer.getByText('E2E разговор с клиентом')).toBeVisible();
   await page.reload();
+  await page.getByRole('article', {name: `Открыть ${deal}`}).click();
+  await page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: `E2E client ${stamp}`}).click();
+  await expect(page.getByRole('dialog', {name: 'Компании'}).getByLabel('Рабочий телефон')).toHaveValue('+7 900 000-00-00');
+  await page.getByRole('dialog', {name: 'Компании'}).getByRole('button', {name: 'Закрыть'}).click();
   await page.getByRole('article', {name: `Открыть ${deal}`}).click();
   await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByLabel('Комментарий')).toHaveValue('E2E follow-up');
   await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByText('E2E разговор с клиентом')).toBeVisible();

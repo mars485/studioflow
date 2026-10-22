@@ -10,6 +10,41 @@ from app.models import Deal, Pipeline, PipelineStage, User, WorkspaceMember
 pytestmark = pytest.mark.asyncio
 
 
+async def test_company_profile_search_deals_and_workspace_access(crm):
+    http, base = crm["http"], crm["base"]
+    path = base + "/clients"
+    created = await http.post(path, json={"name": "  Новая компания  ", "phone": "+7 900 000-00-00",
+        "email": "office@example.com", "website": "https://example.com", "notes": "Важный клиент"})
+    assert created.status_code == 201, created.text
+    company = created.json()
+    assert company["name"] == "Новая компания" and company["email"] == "office@example.com"
+    assert [row["id"] for row in (await http.get(path + "?search=новая")).json()] == [company["id"]]
+    assert (await http.get(path + "/" + company["id"])).json()["notes"] == "Важный клиент"
+    assert (await http.patch(path + "/" + company["id"], json={"name": " "})).status_code == 422
+    patched = await http.patch(path + "/" + company["id"], json={"phone": None, "notes": "Договор в работе"})
+    assert patched.status_code == 200 and patched.json()["phone"] is None
+    assert patched.json()["notes"] == "Договор в работе"
+    assert (await http.get(path + "/" + company["id"] + "/deals")).json() == []
+    disposable = (await http.post(path, json={"name": "Без сделок"})).json()
+    assert (await http.delete(path + "/" + disposable["id"])).status_code == 204
+    assert (await http.get(path + "/" + disposable["id"])).status_code == 404
+    deal = await http.post(base + "/deals", json={**crm["payload"], "client_id": company["id"]})
+    assert deal.status_code == 201, deal.text
+    assert [row["id"] for row in (await http.get(path + "/" + company["id"] + "/deals")).json()] == [deal.json()["id"]]
+    assert (await http.delete(path + "/" + company["id"])).status_code == 409
+    assert (await http.get(path + "/" + company["id"])).status_code == 200
+    other = f'/api/v1/workspaces/{crm["spaces"][1].id}/clients/{company["id"]}'
+    assert (await http.get(other)).status_code == 404
+    assert (await http.patch(other, json={"name": "Чужая"})).status_code == 404
+    assert (await http.get(other + "/deals")).status_code == 404
+    assert (await http.delete(other)).status_code == 404
+    member = await crm["db"].scalar(select(WorkspaceMember).where(WorkspaceMember.workspace_id == crm["spaces"][0].id))
+    member.role = "MANAGER"
+    await crm["db"].commit()
+    assert (await http.patch(path + "/" + company["id"], json={"website": "example.org"})).status_code == 200
+    assert (await http.delete(path + "/" + company["id"])).status_code == 403
+
+
 async def test_pipeline_lifecycle_preserves_deals_and_workspace_access(crm):
     http, base = crm["http"], crm["base"]
     path = base + "/pipelines"
