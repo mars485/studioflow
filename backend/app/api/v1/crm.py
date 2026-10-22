@@ -496,6 +496,10 @@ async def update_deal(deal_id: UUID, data: DealUpdate, workspace_id: UUID = Depe
                       user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     row = await lock_deal(db, workspace_id, deal_id)
     changes = data.model_dump(exclude_unset=True)
+    start_date = changes.get("start_date", row.start_date)
+    end_date = changes.get("end_date", row.end_date)
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(422, "Дата начала не может быть позже даты окончания")
     await validate_relations(db, workspace_id, changes.get("client_id", row.client_id),
                              changes.get("pipeline_id", row.pipeline_id), changes.get("stage_id", row.stage_id))
     contact = await validate_deal_contact(db, workspace_id, changes.get("client_id", row.client_id),

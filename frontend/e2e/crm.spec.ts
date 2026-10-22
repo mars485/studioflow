@@ -36,6 +36,8 @@ test('registration through follow-up survives reload', async ({page}) => {
   await form.getByLabel('Название сделки').fill(deal);
   await form.getByLabel('Название клиента').fill(`E2E client ${stamp}`);
   await form.getByLabel('Ответственный').selectOption({index: 1});
+  await form.getByLabel('Начало сделки').fill('2026-10-23');
+  await form.getByLabel('Окончание сделки').fill('2026-11-02');
   await form.getByRole('button', {name: 'Сохранить сделку'}).click();
   const card = page.getByRole('article', {name: `Открыть ${deal}`});
   await expect(card).toBeVisible();
@@ -76,6 +78,7 @@ test('registration through follow-up survives reload', async ({page}) => {
   await expect(drawer.getByText('E2E разговор с клиентом')).toBeVisible();
   await page.reload();
   await page.getByRole('article', {name: `Открыть ${deal}`}).click();
+  await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByText('Сроки: 2026-10-23 — 2026-11-02')).toBeVisible();
   await page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: `E2E client ${stamp}`}).click();
   await expect(page.getByRole('dialog', {name: 'Компании'}).getByLabel('Рабочий телефон')).toHaveValue('+7 900 000-00-00');
   await page.getByRole('dialog', {name: 'Компании'}).getByRole('button', {name: 'Закрыть'}).click();

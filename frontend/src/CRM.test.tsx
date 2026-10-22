@@ -5,6 +5,7 @@ import {type Client, type Contact, type Deal, type FollowUpCompletion, type Pipe
 
 const deal: Deal = {id: 'd1', workspace_id: 'w1', title: 'Сайт клиента', client_id: 'c1', contact_id: null, pipeline_id: 'p1', stage_id: 's1',
   responsible_user_id: null, amount: '65000.25', currency: 'RUB', contact_name: 'Мария', source: 'Сайт', description: null,
+  start_date: null, end_date: null,
   follow_up_at: '2026-12-01T11:30:00Z', follow_up_action: 'proposal', follow_up_comment: 'Отправить КП',
   created_at: '2026-09-01T10:00:00Z', updated_at: '2026-09-01T10:00:00Z'};
 let stored: Deal[];
@@ -313,6 +314,18 @@ describe('CRM persistence', () => {
     fireEvent.click(screen.getByRole('button', {name: 'Сохранить сделку'}));
     await screen.findByRole('article', {name: 'Открыть Обновлённый сайт'});
     expect(stored[0].title).toBe('Обновлённый сайт');
+  });
+
+  it('saves deal dates and shows them in the card', async () => {
+    render(<CRM/>);
+    fireEvent.click(await screen.findByRole('article', {name: 'Открыть Сайт клиента'}));
+    fireEvent.click(screen.getByRole('button', {name: 'Редактировать'}));
+    fireEvent.change(screen.getByLabelText('Начало сделки'), {target: {value: '2026-10-23'}});
+    fireEvent.change(screen.getByLabelText('Окончание сделки'), {target: {value: '2026-11-02'}});
+    fireEvent.click(screen.getByRole('button', {name: 'Сохранить сделку'}));
+    await waitFor(() => expect(stored[0].start_date).toBe('2026-10-23'));
+    expect(stored[0].end_date).toBe('2026-11-02');
+    expect(screen.getByText('Сроки: 2026-10-23 — 2026-11-02')).toBeTruthy();
   });
 
   it('deletes a deal and displays an empty state', async () => {

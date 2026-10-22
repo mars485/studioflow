@@ -1,8 +1,8 @@
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, ForeignKeyConstraint, Index, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Enum, ForeignKey, ForeignKeyConstraint, Index, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
@@ -125,6 +125,7 @@ class Deal(Base, TimestampMixin):
         ForeignKeyConstraint(["workspace_id", "contact_id"], ["contacts.workspace_id", "contacts.id"], name="fk_deals_workspace_contact", ondelete="RESTRICT"),
         ForeignKeyConstraint(["workspace_id", "pipeline_id", "stage_id"], ["pipeline_stages.workspace_id", "pipeline_stages.pipeline_id", "pipeline_stages.id"], name="fk_deals_workspace_stage", ondelete="RESTRICT"),
         CheckConstraint("amount >= 0", name="ck_deals_amount"),
+        CheckConstraint("start_date IS NULL OR end_date IS NULL OR start_date <= end_date", name="ck_deals_date_order"),
         CheckConstraint("(follow_up_at IS NULL AND follow_up_action IS NULL AND follow_up_comment IS NULL) OR (follow_up_at IS NOT NULL AND follow_up_action IN ('call', 'message', 'proposal', 'decision') AND follow_up_action IS NOT NULL)", name="ck_deals_follow_up"),
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -140,6 +141,8 @@ class Deal(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text)
     contact_name: Mapped[str | None] = mapped_column(String(255))
     source: Mapped[str | None] = mapped_column(String(100))
+    start_date: Mapped[date | None] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date)
     follow_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     follow_up_action: Mapped[str | None] = mapped_column(String(20))
     follow_up_comment: Mapped[str | None] = mapped_column(Text)
