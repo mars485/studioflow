@@ -38,6 +38,32 @@ class StageOut(Output):
     name: str
     position: int
     stage_type: str
+    color: str | None
+
+
+class StageCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+    stage_type: Literal["OPEN", "WON", "LOST"] = "OPEN"
+    color: Annotated[str, StringConstraints(pattern=r"^#[0-9A-Fa-f]{6}$")] | None = None
+
+
+class StageUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)] | None = None
+    stage_type: Literal["OPEN", "WON", "LOST"] | None = None
+    color: Annotated[str, StringConstraints(pattern=r"^#[0-9A-Fa-f]{6}$")] | None = None
+
+    @model_validator(mode="after")
+    def require_change(self):
+        if not self.model_fields_set or any(getattr(self, key) is None for key in ("name", "stage_type") if key in self.model_fields_set):
+            raise ValueError("Specify at least one stage field; name and type cannot be null")
+        return self
+
+
+class StageOrder(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ids: list[UUID] = Field(min_length=2)
 
 
 class PipelineOut(Output):

@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import CRM from './CRM';
-import {type Deal, type FollowUpCompletion, localDateTime} from './api';
+import {type Deal, type FollowUpCompletion, type Stage, localDateTime} from './api';
 
 const deal: Deal = {id: 'd1', workspace_id: 'w1', title: 'Сайт клиента', client_id: 'c1', pipeline_id: 'p1', stage_id: 's1',
   responsible_user_id: null, amount: '65000.25', currency: 'RUB', contact_name: 'Мария', source: 'Сайт', description: null,
@@ -13,16 +13,25 @@ let completed: FollowUpCompletion[];
 let failMutation: boolean;
 let failLoad: boolean;
 let fetchMock: ReturnType<typeof vi.fn>;
+let stages: Stage[];
 
 beforeEach(() => {
   stored = [{...deal}]; notes = []; completed = []; failMutation = false; failLoad = false;
+  stages = [{id: 's1', pipeline_id: 'p1', name: 'Новый лид', position: 0, stage_type: 'OPEN', color: null}, {id: 's2', pipeline_id: 'p1', name: 'Контакт', position: 1, stage_type: 'OPEN', color: null}];
   fetchMock = vi.fn(async (url: string, options: RequestInit = {}) => {
     const method = options.method || 'GET';
     const data = options.body ? JSON.parse(String(options.body)) : null;
     const response = (body: unknown, status = 200) => new Response(status === 204 ? null : JSON.stringify(body), {status, headers: {'Content-Type': 'application/json'}});
     if (failLoad || (method !== 'GET' && failMutation)) return response({detail: 'Server unavailable'}, 503);
     if (url === '/api/v1/workspaces') return response([{id: 'w1', name: 'Studio', role: 'OWNER', currency: 'RUB', timezone: 'Asia/Yekaterinburg'}]);
-    if (url.endsWith('/pipelines')) return response([{id: 'p1', name: 'Продажи', is_default: true, stages: [{id: 's1', name: 'Новый лид', position: 0}, {id: 's2', name: 'Контакт', position: 1}]}]);
+    if (url.endsWith('/pipelines')) return response([{id: 'p1', name: 'Продажи', is_default: true, stages}]);
+    if (url.includes('/pipelines/p1/stages')) {
+      if (method === 'POST') {const stage: Stage = {id: `s${stages.length + 1}`, pipeline_id: 'p1', name: data.name, position: stages.length, stage_type: data.stage_type || 'OPEN', color: data.color || null}; stages.push(stage); return response(stage, 201);}
+      if (method === 'PUT') {stages = data.ids.map((id: string, position: number) => ({...stages.find(stage => stage.id === id)!, position})); return response(stages);}
+      const id = url.split('/').at(-1);
+      if (method === 'PATCH') {const index = stages.findIndex(stage => stage.id === id); stages[index] = {...stages[index], ...data}; return response(stages[index]);}
+      if (method === 'DELETE') {stages = stages.filter(stage => stage.id !== id).map((stage, position) => ({...stage, position})); return response(null, 204);}
+    }
     if (url.endsWith('/members')) return response([{id: 'm1', user_id: 'u1', email: 'manager@example.com', first_name: 'Менеджер', role: 'MANAGER'}]);
     if (url.endsWith('/clients')) return response([{id: 'c1', name: 'Клиент'}]);
     if (url.includes('/deals?')) return response(stored);
@@ -52,6 +61,24 @@ beforeEach(() => {
 afterEach(() => {cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks();});
 
 describe('CRM persistence', () => {
+  it('lets an owner add and reorder stages while preserving the draft on failure', async () => {
+    render(<CRM/>);
+    await screen.findByRole('article', {name: 'Открыть Сайт клиента'});
+    fireEvent.click(screen.getByRole('button', {name: 'Настроить стадии'}));
+    const dialog = screen.getByRole('dialog', {name: 'Настройка стадий'});
+    fireEvent.change(within(dialog).getByLabelText('Новый этап'), {target: {value: 'Переговоры'}});
+    failMutation = true;
+    fireEvent.click(within(dialog).getByRole('button', {name: 'Добавить этап'}));
+    await within(dialog).findByRole('alert');
+    expect((within(dialog).getByLabelText('Новый этап') as HTMLInputElement).value).toBe('Переговоры');
+    failMutation = false;
+    fireEvent.click(within(dialog).getByRole('button', {name: 'Добавить этап'}));
+    await waitFor(() => expect(stages).toHaveLength(3));
+    await within(dialog).findByRole('button', {name: 'Выше Переговоры'});
+    fireEvent.click(within(dialog).getByRole('button', {name: 'Выше Переговоры'}));
+    await waitFor(() => expect(stages[1].name).toBe('Переговоры'));
+    expect(screen.getByText('Переговоры', {selector: '.colHead b'})).toBeTruthy();
+  });
   it('filters deals with today, overdue and missing follow-ups', async () => {
     const today = new Date(); today.setHours(12, 0, 0, 0);
     const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
