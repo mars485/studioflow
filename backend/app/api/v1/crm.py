@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -9,11 +9,12 @@ from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import current_user, workspace_access, workspace_admin
 from app.api.v1.schemas import (ClientCreate, ClientOut, ClientUpdate, ContactCreate, ContactOut, ContactUpdate, DealCreate, DealOut,
-                                DealUpdate, DealActivityCreate, DealActivityOut, DealTaskCreate, DealTaskOut, DealTaskUpdate, FollowUp,
+                                DealUpdate, DealActivityCreate, DealActivityOut, DealTaskCreate, DealTaskOut, DealTaskUpdate, DueTaskReminder, FollowUp,
                                 FollowUpComplete, FollowUpCompleteResult, FollowUpCompletionOut, MyDayOut, PipelineCreate, PipelineOut, PipelineUpdate,
+                                TaskReminderCreate, TaskReminderOut,
                                 StageCreate, StageOrder, StageOut, StageUpdate)
 from app.core.database import get_db
-from app.models import Client, Contact, ContactClient, Deal, DealActivity, DealTask, FollowUpCompletion, Pipeline, PipelineStage, User, Workspace, WorkspaceMember
+from app.models import Client, Contact, ContactClient, Deal, DealActivity, DealTask, FollowUpCompletion, Pipeline, PipelineStage, TaskReminder, User, Workspace, WorkspaceMember
 from app.models.entities import StageType
 
 router = APIRouter(tags=["CRM"])
@@ -611,6 +612,100 @@ async def delete_deal_task(deal_id: UUID, task_id: UUID,
     await db.delete(await find_deal_task(db, workspace_id, deal_id, task_id))
     await db.commit()
     return Response(status_code=204)
+
+
+def reminder_trigger(row: TaskReminder, task: DealTask) -> datetime | None:
+    if row.kind == "DATE":
+        return row.at
+    base = task.start_at if row.kind == "START_OFFSET" else task.due_at
+    return base - timedelta(minutes=row.offset_minutes) if base is not None else None
+
+
+def reminder_output(row: TaskReminder, task: DealTask) -> dict:
+    return {"id": row.id, "workspace_id": row.workspace_id, "task_id": row.task_id,
+            "recipient_user_id": row.recipient_user_id, "created_by_user_id": row.created_by_user_id,
+            "kind": row.kind, "at": row.at, "offset_minutes": row.offset_minutes,
+            "trigger_at": reminder_trigger(row, task), "acknowledged_at": row.acknowledged_at,
+            "created_at": row.created_at}
+
+
+@scoped.get("/deals/{deal_id}/tasks/{task_id}/reminders", response_model=list[TaskReminderOut])
+async def task_reminders(deal_id: UUID, task_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                         db: AsyncSession = Depends(get_db)):
+    task = await find_deal_task(db, workspace_id, deal_id, task_id)
+    rows = (await db.scalars(select(TaskReminder).where(TaskReminder.workspace_id == workspace_id,
+        TaskReminder.task_id == task_id).order_by(TaskReminder.created_at, TaskReminder.id))).all()
+    return [reminder_output(row, task) for row in rows]
+
+
+@scoped.post("/deals/{deal_id}/tasks/{task_id}/reminders", response_model=TaskReminderOut, status_code=201)
+async def create_task_reminder(deal_id: UUID, task_id: UUID, data: TaskReminderCreate,
+                               workspace_id: UUID = Depends(workspace_access), user: User = Depends(current_user),
+                               db: AsyncSession = Depends(get_db)):
+    task = await find_deal_task(db, workspace_id, deal_id, task_id, lock=True)
+    if task.status == "DONE":
+        raise HTTPException(409, "Завершённой задаче нельзя назначить напоминание")
+    await validate_responsible(db, workspace_id, data.recipient_user_id)
+    if (data.kind == "START_OFFSET" and task.start_at is None) or (data.kind == "DUE_OFFSET" and task.due_at is None):
+        raise HTTPException(422, "Для относительного напоминания укажите соответствующий срок задачи")
+    row = TaskReminder(workspace_id=workspace_id, task_id=task_id, created_by_user_id=user.id,
+                       **data.model_dump())
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return reminder_output(row, task)
+
+
+@scoped.delete("/deals/{deal_id}/tasks/{task_id}/reminders/{reminder_id}", status_code=204)
+async def delete_task_reminder(deal_id: UUID, task_id: UUID, reminder_id: UUID,
+                               workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    await find_deal_task(db, workspace_id, deal_id, task_id)
+    row = await db.scalar(select(TaskReminder).where(TaskReminder.id == reminder_id,
+        TaskReminder.workspace_id == workspace_id, TaskReminder.task_id == task_id))
+    if row is None:
+        raise HTTPException(404, "Reminder not found")
+    await db.delete(row)
+    await db.commit()
+    return Response(status_code=204)
+
+
+@scoped.get("/reminders/due", response_model=list[DueTaskReminder])
+async def due_task_reminders(workspace_id: UUID = Depends(workspace_access),
+                             user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(select(TaskReminder, DealTask, Deal.title, Deal.id)
+        .join(DealTask, (DealTask.id == TaskReminder.task_id) & (DealTask.workspace_id == TaskReminder.workspace_id))
+        .join(Deal, (Deal.id == DealTask.deal_id) & (Deal.workspace_id == DealTask.workspace_id))
+        .join(PipelineStage, PipelineStage.id == Deal.stage_id)
+        .where(TaskReminder.workspace_id == workspace_id, TaskReminder.recipient_user_id == user.id,
+               TaskReminder.acknowledged_at.is_(None), DealTask.status == "OPEN",
+               Deal.workspace_id == workspace_id, PipelineStage.workspace_id == workspace_id,
+               PipelineStage.stage_type == StageType.OPEN))).all()
+    now = datetime.now(timezone.utc)
+    result = []
+    for reminder, task, deal_title, deal_id in rows:
+        trigger = reminder_trigger(reminder, task)
+        if trigger is not None and trigger <= now:
+            result.append({**reminder_output(reminder, task), "deal_id": deal_id,
+                           "deal_title": deal_title, "task_title": task.title})
+    return sorted(result, key=lambda item: (item["trigger_at"], str(item["id"])))
+
+
+@scoped.post("/reminders/{reminder_id}/ack", response_model=TaskReminderOut)
+async def acknowledge_task_reminder(reminder_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                                    user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    row = await db.scalar(select(TaskReminder).where(TaskReminder.id == reminder_id,
+        TaskReminder.workspace_id == workspace_id, TaskReminder.recipient_user_id == user.id).with_for_update())
+    if row is None:
+        raise HTTPException(404, "Reminder not found")
+    task = await db.scalar(select(DealTask).where(DealTask.id == row.task_id,
+        DealTask.workspace_id == workspace_id))
+    if task is None:
+        raise HTTPException(404, "Task not found")
+    if row.acknowledged_at is None:
+        row.acknowledged_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(row)
+    return reminder_output(row, task)
 
 
 @scoped.put("/deals/{deal_id}/follow-up", response_model=DealOut)

@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.security import hash_password
-from app.models import Deal, Pipeline, PipelineStage, User, WorkspaceMember
+from app.models import Deal, Pipeline, PipelineStage, TaskReminder, User, WorkspaceMember
 from app.models.entities import StageType
 
 pytestmark = pytest.mark.asyncio
@@ -35,6 +35,43 @@ async def test_my_day_shows_only_active_assigned_work(crm):
     assert (await http.get(base + "/my-day")).json()["follow_ups"] == []
     foreign = f'/api/v1/workspaces/{crm["spaces"][1].id}/my-day'
     assert (await http.get(foreign)).status_code == 404
+
+
+async def test_task_reminders_are_scoped_due_and_acknowledged(crm):
+    http, base = crm["http"], crm["base"]
+    deal_id = (await http.post(base + "/deals", json=crm["payload"])).json()["id"]
+    task = (await http.post(base + "/deals/" + deal_id + "/tasks", json={
+        "title": "Связаться с клиентом", "start_at": "2020-01-01T10:00:00Z",
+        "due_at": "2020-01-03T10:00:00Z"})).json()
+    path = base + "/deals/" + deal_id + "/tasks/" + task["id"] + "/reminders"
+    user_id = str(crm["user"].id)
+    assert (await http.post(path, json={"recipient_user_id": user_id, "kind": "DATE"})).status_code == 422
+    assert (await http.post(path, json={"recipient_user_id": user_id, "kind": "DUE_OFFSET", "offset_minutes": -1})).status_code == 422
+    assert (await http.post(path, json={"recipient_user_id": str(uuid4()), "kind": "DATE", "at": "2020-01-01T09:00:00Z"})).status_code == 422
+    date_reminder = await http.post(path, json={"recipient_user_id": user_id,
+        "kind": "DATE", "at": "2020-01-01T09:00:00Z"})
+    assert date_reminder.status_code == 201, date_reminder.text
+    assert date_reminder.json()["trigger_at"] == "2020-01-01T09:00:00Z"
+    relative = await http.post(path, json={"recipient_user_id": user_id,
+        "kind": "DUE_OFFSET", "offset_minutes": 120})
+    assert relative.status_code == 201, relative.text
+    assert relative.json()["trigger_at"] == "2020-01-03T08:00:00Z"
+    assert len((await http.get(path)).json()) == 2
+    due_path = base + "/reminders/due"
+    assert {item["id"] for item in (await http.get(due_path)).json()} == {date_reminder.json()["id"], relative.json()["id"]}
+    ack = await http.post(base + "/reminders/" + date_reminder.json()["id"] + "/ack")
+    assert ack.status_code == 200 and ack.json()["acknowledged_at"] is not None
+    assert [item["id"] for item in (await http.get(due_path)).json()] == [relative.json()["id"]]
+    task_path = base + "/deals/" + deal_id + "/tasks/" + task["id"]
+    assert (await http.patch(task_path, json={"due_at": "2030-01-03T10:00:00Z"})).status_code == 200
+    assert (await http.get(due_path)).json() == []
+    assert {item["id"]: item["trigger_at"] for item in (await http.get(path)).json()}[relative.json()["id"]] == "2030-01-03T08:00:00Z"
+    foreign = f'/api/v1/workspaces/{crm["spaces"][1].id}/deals/{deal_id}/tasks/{task["id"]}/reminders'
+    assert (await http.get(foreign)).status_code == 404
+    assert (await http.post(foreign, json={"recipient_user_id": user_id, "kind": "DATE", "at": "2020-01-01T09:00:00Z"})).status_code == 404
+    assert (await http.get(f'/api/v1/workspaces/{crm["spaces"][1].id}/reminders/due')).status_code == 404
+    assert (await http.delete(path + "/" + relative.json()["id"])).status_code == 204
+    assert len((await http.get(path)).json()) == 1
 
 
 async def test_deal_tasks_are_scoped_and_keep_completion_actor(crm):
@@ -90,9 +127,13 @@ async def test_removing_member_clears_deal_task_assignment(crm):
     deal_id = (await http.post(base + "/deals", json=crm["payload"])).json()["id"]
     task_path = base + "/deals/" + deal_id + "/tasks"
     task = (await http.post(task_path, json={"title": "Передать задачу", "assignee_user_id": str(member_user.id)})).json()
+    reminder = await http.post(task_path + "/" + task["id"] + "/reminders", json={
+        "recipient_user_id": str(member_user.id), "kind": "DATE", "at": "2030-01-01T09:00:00Z"})
+    assert reminder.status_code == 201, reminder.text
     assert (await http.delete(base + "/members/" + str(member.id))).status_code == 204
     assert (await http.get(task_path)).json()[0]["assignee_user_id"] is None
     assert (await http.get(task_path)).json()[0]["id"] == task["id"]
+    assert await db.scalar(select(TaskReminder).where(TaskReminder.id == reminder.json()["id"])) is None
 
 
 async def test_deal_dates_validate_order_and_persist(crm):

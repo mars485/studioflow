@@ -30,6 +30,10 @@ export type DealTask = {id: string; workspace_id: string; deal_id: string; title
   priority: 'LOW' | 'MEDIUM' | 'HIGH'; status: 'OPEN' | 'DONE'; assignee_user_id: string | null;
   created_by_user_id: string | null; completed_by_user_id: string | null;
   start_at: string | null; due_at: string | null; created_at: string; updated_at: string; completed_at: string | null};
+export type TaskReminder = {id: string; workspace_id: string; task_id: string; recipient_user_id: string;
+  created_by_user_id: string | null; kind: 'DATE' | 'START_OFFSET' | 'DUE_OFFSET'; at: string | null;
+  offset_minutes: number | null; trigger_at: string | null; acknowledged_at: string | null; created_at: string};
+export type DueTaskReminder = TaskReminder & {deal_id: string; deal_title: string; task_title: string};
 export type MyDay = {tasks: {task: DealTask; deal_title: string}[];
   follow_ups: {deal_id: string; deal_title: string; at: string; action: Action; comment: string | null}[]};
 export type FollowUpCompletion = {id: string; deal_id: string; completed_by_user_id: string | null; completed_by_name: string; scheduled_at: string; action: Action; planned_comment: string | null; outcome_comment: string | null; completed_at: string};

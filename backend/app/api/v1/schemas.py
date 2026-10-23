@@ -319,6 +319,42 @@ class MyDayOut(BaseModel):
     follow_ups: list[MyDayFollowUp]
 
 
+class TaskReminderCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    recipient_user_id: UUID
+    kind: Literal["DATE", "START_OFFSET", "DUE_OFFSET"]
+    at: AwareDatetime | None = None
+    offset_minutes: int | None = Field(default=None, ge=0, le=525600)
+
+    @model_validator(mode="after")
+    def check_trigger(self):
+        if self.kind == "DATE" and (self.at is None or self.offset_minutes is not None):
+            raise ValueError("Для напоминания по дате укажите дату и время")
+        if self.kind != "DATE" and (self.at is not None or self.offset_minutes is None):
+            raise ValueError("Для напоминания до срока укажите интервал в минутах")
+        return self
+
+
+class TaskReminderOut(Output):
+    id: UUID
+    workspace_id: UUID
+    task_id: UUID
+    recipient_user_id: UUID
+    created_by_user_id: UUID | None
+    kind: Literal["DATE", "START_OFFSET", "DUE_OFFSET"]
+    at: datetime | None
+    offset_minutes: int | None
+    trigger_at: datetime | None
+    acknowledged_at: datetime | None
+    created_at: datetime
+
+
+class DueTaskReminder(TaskReminderOut):
+    deal_id: UUID
+    deal_title: str
+    task_title: str
+
+
 class DealOut(Output):
     id: UUID
     workspace_id: UUID

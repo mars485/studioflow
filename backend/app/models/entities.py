@@ -168,6 +168,7 @@ class DealActivity(Base):
 class DealTask(Base):
     __tablename__ = "deal_tasks"
     __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_deal_tasks_workspace_id"),
         ForeignKeyConstraint(["workspace_id", "deal_id"], ["deals.workspace_id", "deals.id"], name="fk_deal_tasks_workspace_deal", ondelete="CASCADE"),
         CheckConstraint("priority IN ('LOW', 'MEDIUM', 'HIGH')", name="ck_deal_tasks_priority"),
         CheckConstraint("status IN ('OPEN', 'DONE')", name="ck_deal_tasks_status"),
@@ -188,6 +189,24 @@ class DealTask(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TaskReminder(Base):
+    __tablename__ = "task_reminders"
+    __table_args__ = (
+        ForeignKeyConstraint(["workspace_id", "task_id"], ["deal_tasks.workspace_id", "deal_tasks.id"], name="fk_task_reminders_workspace_task", ondelete="CASCADE"),
+        CheckConstraint("(kind = 'DATE' AND at IS NOT NULL AND offset_minutes IS NULL) OR (kind IN ('START_OFFSET', 'DUE_OFFSET') AND at IS NULL AND offset_minutes >= 0)", name="ck_task_reminders_trigger"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    recipient_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    kind: Mapped[str] = mapped_column(String(20))
+    at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    offset_minutes: Mapped[int | None]
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class FollowUpCompletion(Base):

@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import CRM from './CRM';
-import {type Client, type Contact, type Deal, type DealTask, type FollowUpCompletion, type Pipeline, type Stage, localDateTime} from './api';
+import {type Client, type Contact, type Deal, type DealTask, type FollowUpCompletion, type Pipeline, type Stage, type TaskReminder, localDateTime} from './api';
 
 const deal: Deal = {id: 'd1', workspace_id: 'w1', title: 'Сайт клиента', client_id: 'c1', contact_id: null, pipeline_id: 'p1', stage_id: 's1',
   responsible_user_id: null, amount: '65000.25', currency: 'RUB', contact_name: 'Мария', source: 'Сайт', description: null,
@@ -19,9 +19,10 @@ let pipelineRows: Pipeline[];
 let clientRows: Client[];
 let contactRows: Contact[];
 let taskRows: DealTask[];
+let reminderRows: TaskReminder[];
 
 beforeEach(() => {
-  stored = [{...deal}]; notes = []; completed = []; taskRows = []; failMutation = false; failLoad = false;
+  stored = [{...deal}]; notes = []; completed = []; taskRows = []; reminderRows = []; failMutation = false; failLoad = false;
   stages = [{id: 's1', pipeline_id: 'p1', name: 'Новый лид', position: 0, stage_type: 'OPEN', color: null}, {id: 's2', pipeline_id: 'p1', name: 'Контакт', position: 1, stage_type: 'OPEN', color: null}];
   pipelineRows = [{id: 'p1', name: 'Продажи', is_default: true, is_active: true, stages}];
   clientRows = [{id: 'c1', type: 'COMPANY', name: 'Клиент', phone: null, email: null, website: null, notes: null}];
@@ -79,6 +80,17 @@ beforeEach(() => {
       return response(item || {detail: 'Client not found'}, item ? 200 : 404);
     }
     if (url.includes('/deals?')) return response(stored);
+    if (url.endsWith('/reminders/due')) return response(reminderRows.filter(item => !item.acknowledged_at && item.trigger_at && new Date(item.trigger_at) <= new Date()).map(item => ({...item, deal_id: 'd1', deal_title: 'Сайт клиента', task_title: taskRows.find(task => task.id === item.task_id)?.title || ''})));
+    if (url.includes('/reminders/') && url.endsWith('/ack')) {const item = reminderRows.find(row => row.id === url.split('/reminders/')[1].split('/')[0])!; item.acknowledged_at = new Date().toISOString(); return response(item);}
+    if (url.includes('/tasks/') && url.includes('/reminders')) {
+      const taskId = url.split('/tasks/')[1].split('/')[0];
+      if (method === 'GET') return response(reminderRows.filter(item => item.task_id === taskId));
+      if (method === 'DELETE') {reminderRows = reminderRows.filter(item => item.id !== url.split('/reminders/')[1]); return response(null, 204);}
+      const item: TaskReminder = {id: `r${reminderRows.length + 1}`, workspace_id: 'w1', task_id: taskId,
+        recipient_user_id: data.recipient_user_id, created_by_user_id: 'u1', kind: data.kind, at: data.at,
+        offset_minutes: data.offset_minutes, trigger_at: data.at, acknowledged_at: null, created_at: new Date().toISOString()};
+      reminderRows.push(item); return response(item, 201);
+    }
     if (url.endsWith('/my-day')) return response({tasks: taskRows.filter(item => item.assignee_user_id === 'u1' && item.status === 'OPEN').map(task => ({task, deal_title: stored.find(row => row.id === task.deal_id)?.title || ''})),
       follow_ups: stored.filter(item => item.responsible_user_id === 'u1' && item.follow_up_at).map(item => ({deal_id: item.id, deal_title: item.title, at: item.follow_up_at, action: item.follow_up_action, comment: item.follow_up_comment}))});
     if (url.endsWith('/tasks')) {
@@ -384,6 +396,24 @@ describe('CRM persistence', () => {
     fireEvent.click(within(panel).getByRole('button', {name: 'Выполнено'}));
     await waitFor(() => expect(taskRows[0].status).toBe('DONE'));
     expect(within(panel).queryByText('Позвонить клиенту')).toBeNull();
+  });
+
+  it('creates a task reminder and acknowledges it in My Day', async () => {
+    render(<CRM/>);
+    fireEvent.click(await screen.findByRole('article', {name: 'Открыть Сайт клиента'}));
+    fireEvent.change(screen.getByLabelText('Название задачи'), {target: {value: 'Позвонить завтра'}});
+    fireEvent.click(screen.getByRole('button', {name: 'Добавить задачу'}));
+    fireEvent.click(await screen.findByRole('button', {name: 'Напоминания: Позвонить завтра'}));
+    fireEvent.change(screen.getByLabelText('Дата и время напоминания'), {target: {value: '2020-01-01T10:00'}});
+    fireEvent.click(screen.getByRole('button', {name: 'Добавить напоминание'}));
+    await waitFor(() => expect(reminderRows).toHaveLength(1));
+    fireEvent.click(screen.getByRole('button', {name: 'Закрыть'}));
+    fireEvent.click(screen.getByRole('button', {name: 'Мой день'}));
+    const panel = await screen.findByRole('region', {name: 'Мой день'});
+    await within(panel).findByText('Напоминания');
+    fireEvent.click(within(panel).getByRole('button', {name: 'Прочитано'}));
+    await waitFor(() => expect(reminderRows[0].acknowledged_at).not.toBeNull());
+    expect(within(panel).queryByText('Напоминания')).toBeNull();
   });
 
   it('deletes a deal and displays an empty state', async () => {

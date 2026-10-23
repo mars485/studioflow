@@ -1,6 +1,7 @@
 import {useEffect, useState, type FormEvent} from 'react';
 import {type DealTask, type Member, errorText, localDateTime, request} from './api';
 import './DealTasks.css';
+import TaskReminders from './TaskReminders';
 
 type Draft = {title: string; description: string; priority: DealTask['priority']; assignee_user_id: string;
   start_at: string; due_at: string};
@@ -64,6 +65,7 @@ export default function DealTasks({base, dealId, members, canDelete}: {base: str
         <label><input type="checkbox" checked={row.status === 'DONE'} disabled={busy} onChange={() => toggle(row)}/><strong>{row.title}</strong></label>
         <p>{row.priority === 'HIGH' ? 'Высокий' : row.priority === 'LOW' ? 'Низкий' : 'Средний'} приоритет · {members.find(member => member.user_id === row.assignee_user_id)?.first_name || 'Без исполнителя'}{row.due_at ? ` · до ${new Date(row.due_at).toLocaleString('ru-RU')}` : ''}</p>
         {row.description && <p>{row.description}</p>}
+        <TaskReminders base={base} dealId={dealId} task={row} members={members}/>
         <button type="button" disabled={busy} onClick={() => edit(row)}>Изменить {row.title}</button>
         {canDelete && <button type="button" disabled={busy} onClick={() => remove(row)}>Удалить {row.title}</button>}
       </li>)}</ul> : <p className="muted">Задач по сделке пока нет.</p>}

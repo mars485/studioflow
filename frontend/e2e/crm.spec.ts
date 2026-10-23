@@ -49,6 +49,10 @@ test('registration through follow-up survives reload', async ({page}) => {
   await dealDrawer.getByLabel('Крайний срок').fill('2026-12-04T18:00');
   await dealDrawer.getByRole('button', {name: 'Добавить задачу'}).click();
   await expect(dealDrawer.getByText(`E2E задача ${stamp}`, {exact: true})).toBeVisible();
+  await dealDrawer.getByRole('button', {name: `Напоминания: E2E задача ${stamp}`}).click();
+  await dealDrawer.getByLabel('Дата и время напоминания').fill('2020-01-01T10:00');
+  await dealDrawer.getByRole('button', {name: 'Добавить напоминание'}).click();
+  await expect(dealDrawer.getByText(/В 01\.01\.2020/)).toBeVisible();
   await page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: `E2E client ${stamp}`}).click();
   const company = page.getByRole('dialog', {name: 'Компании'});
   await expect(company.getByRole('button', {name: deal})).toBeVisible();
@@ -89,7 +93,10 @@ test('registration through follow-up survives reload', async ({page}) => {
   await page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: 'Закрыть'}).click();
   await page.getByRole('button', {name: 'Мой день'}).click();
   const myDay = page.getByRole('region', {name: 'Мой день'});
-  await expect(myDay.getByText(`E2E задача ${stamp}`, {exact: true})).toBeVisible();
+  await expect(myDay.getByText(`E2E задача ${stamp}`, {exact: true}).first()).toBeVisible();
+  await expect(myDay.getByText('Напоминания')).toBeVisible();
+  await myDay.getByRole('button', {name: 'Прочитано'}).click();
+  await expect(myDay.getByText('Напоминания')).toHaveCount(0);
   await expect(myDay.getByText('Следующий контакт', {exact: false})).toBeVisible();
   await page.getByRole('button', {name: 'Мой день'}).click();
   await page.getByRole('article', {name: `Открыть ${deal}`}).click();
