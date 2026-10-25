@@ -1,0 +1,12 @@
+export type Organization = {id: string; name: string; tax_id: string; tax_branch: string; address: string;
+  bank: string; bank_account: string; bank_code: string};
+export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PARTIAL' | 'PAID' | 'CANCELLED';
+export type Invoice = {id: string; number: number; issued_on: string; client_id: string; organization_id: string;
+  deal_id: string | null; project_id: string | null; manager_user_id: string | null; amount: string; currency: string;
+  description: string; state: 'DRAFT' | 'ISSUED' | 'CANCELLED'; status: InvoiceStatus; paid_amount: string;
+  remaining_amount: string; sent_at: string | null; seller: Omit<Organization, 'id'>;
+  buyer: {name: string; tax_id: string; address: string}};
+export type Payment = {id: string; request_key: string; paid_on: string; amount: string; method: string; comment: string | null};
+export type Act = {id: string; number: number; invoice_id: string; issued_on: string; status: 'DRAFT' | 'SIGNED'; signed_at: string | null};
+export const invoiceStatusNames: Record<InvoiceStatus, string> = {DRAFT: 'Черновик', ISSUED: 'Выставлен', PARTIAL: 'Оплачен частично', PAID: 'Оплачен', CANCELLED: 'Отменён'};
+export const today = () => {const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;};

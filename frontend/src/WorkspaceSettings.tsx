@@ -1,5 +1,6 @@
 import {useEffect, useRef, useState, type FormEvent} from 'react';
 import {errorText, request, roleNames, type Member, type Role, type Workspace} from './api';
+import DealAudit from './DealAudit';
 
 export default function WorkspaceSettings() {
   const [spaces, setSpaces] = useState<Workspace[]>([]);
@@ -10,6 +11,7 @@ export default function WorkspaceSettings() {
   const saving = useRef(false);
   const [error, setError] = useState('');
   const [version, setVersion] = useState(0);
+  const [auditWorkspace, setAuditWorkspace] = useState('');
   const workspace = spaces.find(w => w.id === id);
   useEffect(() => {
     const controller = new AbortController();
@@ -66,5 +68,8 @@ export default function WorkspaceSettings() {
         <p className="muted">Участник должен заранее зарегистрироваться. Письмо-приглашение пока не отправляется.</p>
       </form>}
     </section>}
+    {canManage && !loading && !error && <><button type="button" onClick={() => setAuditWorkspace(old => old === id ? '' : id)}>
+      {auditWorkspace === id ? 'Скрыть аудит сделок' : 'Открыть аудит сделок'}</button>
+      {auditWorkspace === id && <DealAudit key={id} base={`/workspaces/${id}`}/>}</>}
   </>;
 }

@@ -1,0 +1,19 @@
+/* One cascade entry point: legacy layouts first, semantic theme second.
+   Do not import module CSS from TSX: an unlayered import would beat both layers. */
+@layer legacy, theme;
+
+@import './styles.css' layer(legacy);
+@import './Tasks.css' layer(legacy);
+@import './Projects.css' layer(legacy);
+@import './Finance.css' layer(legacy);
+@import './DealTasks.css' layer(legacy);
+@import './MyDay.css' layer(legacy);
+@import './DealDetails.css' layer(legacy);
+@import './CsvExport.css' layer(legacy);
+@import './TaskCalendar.css' layer(legacy);
+@import './ProjectWorkPlan.css' layer(legacy);
+@import './HomeDashboard.css' layer(legacy);
+@import './CRMDesign.css' layer(legacy);
+@import './Layout.css' layer(legacy);
+@import './PortalDesign.css' layer(legacy);
+@import './ITGTheme.css' layer(theme);

@@ -17,6 +17,8 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://studioflow_e2e:local_test_only@db:5432/studioflow_e2e
       ALLOWED_ORIGINS: '["http://frontend:5173"]'
+      WEBHOOK_DESTINATIONS: '{"e2e-only":"https://hooks.example.invalid/events"}'
+      WEBHOOK_SIGNING_KEY: 'disposable-e2e-key-not-for-real-integrations-12345'
     depends_on:
       db:
         condition: service_healthy
@@ -37,3 +39,7 @@ services:
     depends_on:
       - frontend
     command: npx playwright test
+
+networks:
+  default:
+    internal: true

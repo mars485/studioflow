@@ -1,0 +1,10 @@
+.workStageList{padding-left:22px}
+.workStageList li{margin:12px 0;padding:10px;border:1px solid #e7eaf0;border-radius:8px}
+.workEditor fieldset{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.workEditor label{font-size:11px}
+.workGanttRow{display:grid;grid-template-columns:minmax(130px,1fr) minmax(180px,2fr);gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid #e7eaf0}
+.workGanttRow small{display:block;font-size:10px;color:#667085;margin-top:5px}
+.workGanttTrack{height:30px;background:#f2f4f7;position:relative;border-radius:5px}
+.workGanttBar{position:absolute;height:30px;min-width:3px;border-radius:5px;background:#c7d2fe;color:#312e81;font-size:10px;overflow:hidden;white-space:nowrap;padding:7px 2px;box-sizing:border-box}
+.workGanttBar.ACTIVE{background:#a5b4fc}.workGanttBar.DONE{background:#a7f3d0;color:#065f46}
+@media(max-width:640px){.workEditor fieldset{grid-template-columns:1fr}.workGanttRow{grid-template-columns:1fr}}

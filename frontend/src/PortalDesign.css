@@ -1,0 +1,157 @@
+/* Shared StudioFlow visual language for every workspace module. */
+.homeShell:not(.crmShell)>main{min-width:0;min-height:100vh;padding:0 32px 32px;align-self:start}
+.homeShell:not(.crmShell)>main>header{min-height:76px;margin:0 -32px 26px;padding:0 32px;border-bottom:1px solid #e9e9ed;background:#fff}
+.homeShell:not(.crmShell)>main>header h1{font-size:25px;letter-spacing:-.55px;color:#202024;margin:0 0 5px}
+.homeShell:not(.crmShell)>main>header p{font-size:12px;color:#85858e}
+.homeShell:not(.crmShell)>main>section.card,.homeShell:not(.crmShell) .settingsCard,.homeShell:not(.crmShell) .card:not(.authCard){border:1px solid #e9e9ed;border-radius:10px;box-shadow:0 1px 2px #19191d05;background:#fff}
+.homeShell:not(.crmShell) .settingsCard{padding:22px 24px;margin:0 0 18px}
+.homeShell:not(.crmShell) .settingsCard h2{font-size:15px;letter-spacing:-.2px;color:#29292f;margin:0 0 14px}
+.homeShell:not(.crmShell) .settingsCard h2:not(:first-child){margin-top:25px;padding-top:19px;border-top:1px solid #eeeef1}
+.homeShell:not(.crmShell) .settingsCard p{line-height:1.6}
+.homeShell:not(.crmShell) .settingsCard label,.homeShell:not(.crmShell) .settingsCard .muted{color:#767680}
+.homeShell:not(.crmShell) input:not([type=checkbox]):not([type=color]),.homeShell:not(.crmShell) select,.homeShell:not(.crmShell) textarea{border-color:#e2e2e8;border-radius:7px;color:#35353d;background:#fff}
+.homeShell:not(.crmShell) input:focus-visible,.homeShell:not(.crmShell) select:focus-visible,.homeShell:not(.crmShell) textarea:focus-visible,.homeShell:not(.crmShell) button:focus-visible{outline:2px solid #e31e24;outline-offset:2px}
+.homeShell:not(.crmShell) button.primary,.homeShell:not(.crmShell) .settingsCard button.primary{background:#e31e24;border:1px solid #e31e24;border-radius:7px;color:#fff}
+.homeShell:not(.crmShell) button.primary:hover:not(:disabled){background:#c91c22}
+.homeShell:not(.crmShell) .memberRow{border-color:#eeeef1}
+.homeShell:not(.crmShell) .memberRow>button,.homeShell:not(.crmShell) .settingsCard>button{border:1px solid #e4e4e9;border-radius:7px;background:#fff;color:#5f5f69;padding:9px 12px;cursor:pointer}
+.homeShell:not(.crmShell) .memberRow>button:hover,.homeShell:not(.crmShell) .settingsCard>button:hover{border-color:#e5aeb1;color:#c92a30}
+.homeShell:not(.crmShell) .taskTable{border-color:#e9e9ed;border-radius:9px}
+.homeShell:not(.crmShell) .taskTable thead th{background:#f7f7f9;color:#70707a}
+.homeShell:not(.crmShell) .linkLike{color:#c92a30}
+.homeShell:not(.crmShell) .statusList button,.homeShell:not(.crmShell) .inlineForm button{background:#fff1f1;color:#c92a30}
+.homeShell:not(.crmShell) .errorMessage{border:1px solid #f1d1d2;background:#fff5f5;color:#a5252b}
+@media(max-width:800px){.homeShell:not(.crmShell)>main{padding-left:22px;padding-right:22px}.homeShell:not(.crmShell)>main>header{margin-left:-22px;margin-right:-22px;padding-left:22px;padding-right:22px}}
+@media(max-width:540px){.homeShell:not(.crmShell)>main{padding:0 16px 22px}.homeShell:not(.crmShell)>main>header{min-height:66px;margin:0 -16px 20px;padding:0 16px}.homeShell:not(.crmShell) .settingsCard{padding:17px}.homeShell:not(.crmShell) .settingsCard .inlineForm{align-items:stretch}.homeShell:not(.crmShell) .settingsCard .inlineForm button{justify-content:center}}
+
+/* Full portal rollout. The approved home and CRM keep their own layouts. */
+.portalModule{--portal-accent:#e31e24;--portal-ink:#19191d;--portal-line:#e7e7ed;min-width:0;font-size:13px;line-height:1.5;color:#454550}
+.portalModule button,.portalModule input,.portalModule select,.portalModule textarea{font-family:inherit}
+.portalModule :is(button,input,select,textarea):focus-visible,.itgAuth :is(button,input):focus-visible{outline:2px solid #e31e24;outline-offset:3px}
+.portalModule button{cursor:pointer;max-width:100%;font-size:12px;transition:background .15s,border-color .15s}
+.portalModule button:disabled{cursor:not-allowed}
+.portalModule :is(h1,h2,h3){color:#29292f;line-height:1.3}
+.portalModule :is(p,li,td){overflow-wrap:anywhere}
+.portalModule>header,.portalModule>.analyticsDashboard>header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:0 0 24px;padding:0;border:0;background:transparent;min-height:70px}
+.portalModule>header>div:first-child::before,.portalModule>.analyticsDashboard>header>div:first-child::before{content:'STUDIOFLOW / IT GROUP';display:block;color:#9898a3;font-size:9px;letter-spacing:1.4px;font-weight:600;margin-bottom:9px}
+.portalModule header h1{font-size:28px;letter-spacing:-.8px;margin:0 0 7px}
+.portalModule header p{font-size:12px;color:#80808d;line-height:1.6;margin:0}
+.portalModule .headerActions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.portalModule button:not([class]),.portalModule .filter,.portalModule .noteBtn,.portalModule .quickActions button{border:1px solid #e0e0e7;border-radius:7px;background:white;color:#686874;padding:9px 12px;font-size:12px;line-height:1.4}
+.portalModule button:not([class]):hover:not(:disabled),.portalModule .filter:hover:not(:disabled){border-color:#dcaeb2;color:#b6252d;background:#fff8f8}
+.portalModule .primary,.portalModule .saveFollow,.portalModule .activitySection form button{background:#e31e24;border:1px solid #e31e24;color:#fff;border-radius:7px;font-size:12px;box-shadow:0 3px 8px #e31e2410}
+.portalModule .primary:hover:not(:disabled),.portalModule .saveFollow:hover:not(:disabled){background:#c91c22;border-color:#c91c22}
+.portalModule .filter[aria-pressed=true],.portalModule button[role=tab][aria-selected=true],.portalModule .projectTabs button.active{background:#fff0f1;border-color:#edb9bc;color:#bf2c34}
+.portalModule .filter b{background:#fae3e5;color:#c52b33;border-radius:4px}
+.portalModule .crmTools{align-items:center;gap:10px;padding:0 0 18px;border-bottom:1px solid #e7e7ed;margin:0 0 20px;min-width:0}
+.portalModule>label,.portalModule>.analyticsDashboard>label{display:flex;align-items:center;gap:12px;font-size:11px;color:#898994;margin-bottom:20px;flex-wrap:wrap}
+.portalModule :is(input:not([type=checkbox]):not([type=color]),select,textarea){max-width:100%;border:1px solid #dfdfe7;border-radius:7px;background:#fff;padding:10px 12px;color:#3f3f4b;font:inherit;font-size:12px;min-width:0}
+.portalModule input::placeholder,.portalModule textarea::placeholder{color:#a0a0aa}
+.portalModule input[type=checkbox]{accent-color:#e31e24;flex-shrink:0}
+.portalModule label{font-size:12px;color:#73737f}
+.portalModule :is(.drawerSection,.dealModal) label{display:grid;gap:6px;margin:10px 0}
+.portalModule .drawerSection label:has(input[type=checkbox]){display:flex;align-items:center}
+.portalModule .crmTools>input{flex:1;min-width:160px;max-width:420px}
+.portalModule .crmTools>div[role=tablist],.portalModule .projectTabs{display:flex;gap:6px;flex-wrap:wrap}
+.portalModule .csvExport{font-size:10px;max-width:240px}.portalModule .csvExport small{color:#94949f;line-height:1.5}
+.portalModule :is(.taskTable,.financeTable){display:block;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;border:1px solid #e4e4eb;border-radius:10px;border-spacing:0;background:white;scrollbar-width:thin;scrollbar-color:#ceced8 transparent}
+.portalModule :is(.taskTable,.financeTable) :is(th,td){padding:15px 17px;min-width:100px;border-bottom:1px solid #eeeef3;vertical-align:middle;font-size:12px}
+.portalModule :is(.taskTable,.financeTable) th{font-size:10px;color:#82828e;background:#f9f9fb;font-weight:600;white-space:nowrap}
+.portalModule :is(.taskTable,.financeTable) tbody tr:last-child td{border-bottom:0}
+.portalModule :is(.taskTable,.financeTable) tbody tr:hover{background:#fffafa}
+.portalModule :is(.taskTable,.financeTable) td:first-child{min-width:190px}
+.portalModule .taskTable .linkLike{color:#383843;font-weight:600;line-height:1.5}
+.portalModule .taskTable .linkLike:hover{color:#ca2931}
+.portalModule .taskTable td>button:not(.linkLike){font-size:10px;padding:6px 8px;margin:4px 0 4px 7px}
+.portalModule .portalTableScroll{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;border:1px solid #e4e4eb;border-radius:10px;background:#fff;scrollbar-width:thin;scrollbar-color:#ceced8 transparent}
+.portalModule .portalTableScroll :is(.taskTable,.financeTable){display:table;overflow:visible;border:0;border-radius:0;width:100%;margin:0}
+.portalModule .portalTableScroll :is(th,td){min-width:120px}
+.portalModule[data-module="Клиенты"] .portalTableScroll :is(th,td){min-width:180px}
+.portalModule[data-module="Проекты"] .taskTable td:nth-child(5){min-width:210px;white-space:nowrap}
+.portalModule .kanban{gap:14px;max-width:100%;padding-bottom:18px;scrollbar-width:thin}
+.portalModule .kanbanCol{background:#eeeff3;border:1px solid #e1e2e9;border-top:3px solid #b6b6c3;border-radius:9px;padding:14px 10px;min-height:460px;min-width:0}
+.portalModule .kanbanCol:first-child{border-top-color:#e31e24}
+.portalModule .colHead{padding:3px 5px 16px}.portalModule .colHead b{font-size:12px;color:#575763}
+.portalModule .deal{border:1px solid #e0e1e8;border-radius:8px;box-shadow:0 2px 3px #22222f03;padding:15px;background:#fff}
+.portalModule .deal h3{font-size:13px;line-height:1.5;color:#3b3b47;margin:9px 0 7px}
+.portalModule .deal:focus-visible{outline:2px solid #e31e24;outline-offset:2px}
+.portalModule .deal:hover{border-color:#d2b8bb}.portalModule .deal .muted{color:#9393a0}
+.portalModule .muted{color:#888895;font-size:12px;line-height:1.7}
+.portalModule>p.muted,.portalModule>p[role=status],.portalModule>.analyticsDashboard>p[role=status]{padding:22px;background:white;border:1px solid #e7e7ee;border-radius:9px}
+.portalModule .settingsCard{border:1px solid #e6e6ed;border-radius:10px;padding:24px;margin:20px 0;background:#fff;box-shadow:0 1px 2px #19191d03}
+.portalModule .settingsCard h2{font-size:16px;letter-spacing:-.3px}
+.portalModule .settingsCard fieldset{gap:16px}
+.portalModule .settingsCard fieldset>button:not(.primary){justify-self:start}
+.portalModule .memberRow{padding:17px 0;border-color:#eeeef3}
+.portalModule .memberRow b{font-size:13px}.portalModule .memberRow .grow span{font-size:11px;color:#9595a1}
+.portalModule .inlineForm{gap:10px;align-items:end;margin:12px 0}
+.portalModule .inlineForm label{display:grid;gap:7px;min-width:0;flex:1 1 180px}
+.portalModule .inlineForm button,.portalModule .statusList button,.portalModule .plainList button{background:#fff4f4;color:#bc2d36;border:1px solid #f0d5d8;border-radius:6px}
+.portalModule .inlineForm input,.portalModule .inlineForm select{min-width:0}
+.portalModule .plainList li{padding:13px 0;gap:10px;border-color:#eeeef3}
+.portalModule .activityList{display:grid;gap:13px;margin:0 0 22px}
+.portalModule .activityList li{margin:0;border:1px solid #e7e7ed;border-left:3px solid #e6a6aa;background:#fff;padding:18px;border-radius:9px;line-height:1.65}
+.portalModule .activityList li>button{margin:6px 8px 0 0}
+.portalModule .activityList time{color:#9999a4;font-size:10px}
+.portalModule .activityKind,.portalModule .clientLink,.portalModule .clientDeals li button{color:#c52f37}
+.portalModule .drawerBackdrop,.portalModule .modalBackdrop{background:#19191d66;backdrop-filter:blur(2px)}
+.portalModule .drawer{width:min(600px,100%);padding:28px;box-shadow:-10px 0 50px #19191d1c}
+.portalModule .financeDrawer{width:min(820px,100%)}
+.portalModule .drawerHead{gap:12px;border-color:#e9e9ef;padding-bottom:20px}
+.portalModule .drawerHead h2{font-size:21px;letter-spacing:-.4px;line-height:1.4}
+.portalModule .drawerHead small{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#9999a5}
+.portalModule .drawerHead button{flex-shrink:0;padding:0;border:0;background:#f4f4f7}
+.portalModule .drawerSection{border-color:#e9e9ef}.portalModule .drawerSection h3{font-size:13px}
+.portalModule .dealModal{border-radius:12px;padding:25px;box-shadow:0 20px 60px #19191d22}
+.portalModule .clientListButton:hover,.portalModule .clientListButton[aria-current=true]{color:#bd3038;background:#fff0f1}
+.portalModule .clientDirectory{width:min(900px,100%)}
+.portalModule pre{background:#242429;color:#e7d6d8;border-radius:8px;padding:20px;font-size:11px;line-height:1.8;overflow:auto;max-width:100%}
+.portalModule code{font-size:11px;overflow-wrap:anywhere}
+.portalModule .errorMessage,.portalModule>p[role=alert]{background:#fff1f1;color:#a52c34;border:1px solid #f0d1d4;border-radius:8px;padding:14px;font-size:12px;line-height:1.6}
+.portalModule .calendarScroll{border-radius:10px;border:1px solid #e4e4eb;scrollbar-width:thin}
+.portalModule .taskCalendar :is(th,td){border-color:#e9e9ef;padding:9px}.portalModule .taskCalendar th{background:#f9f9fb;color:#858590;font-size:10px}
+.portalModule .calendarDayHead button,.portalModule .calendarMore{background:#fff1f2;color:#bd3038;padding:2px 6px;border:0}
+.portalModule .calendarDayHead time[aria-current=date]{background:#e31e24}
+.portalModule .calendarTask{background:#fff1f2;color:#a7343c;border-color:#edc7cc;font-size:11px}
+.portalModule .calendarTask.completed{background:#eef7f1;color:#397959;border-color:#cee4d5}
+.portalModule .calendarTools{margin:20px 0}.portalModule .calendarTools h2{font-size:16px}
+.portalModule .workGanttTrack{background:#f2f2f6}.portalModule .workGanttBar{background:#edd1d4;color:#7e353c}.portalModule .workGanttBar.ACTIVE{background:#e9949b}.portalModule .workGanttBar.DONE{background:#cee8d8;color:#36694c}
+.portalModule .metrics{gap:16px;margin:22px 0}.portalModule .metric{padding:22px}.portalModule .metric>span{font-size:12px;color:#858591}.portalModule .metric>strong{font-size:30px;color:#30303a}
+.portalModule .metric:first-child{border-top:3px solid #e31e24}.portalModule .metric small{font-size:11px;color:#92929d}
+.portalModule [aria-label="Результаты общего поиска"]{margin-top:22px;padding:22px;border:1px solid #e5e5ed;border-radius:10px;background:white}
+.portalModule [aria-label="Результаты общего поиска"] .plainList li{display:grid;gap:6px;padding:15px 0}.portalModule [aria-label="Результаты общего поиска"] .plainList li>span{font-size:10px;color:#9595a0}.portalModule [aria-label="Результаты общего поиска"] .plainList button{text-align:left;justify-self:start}
+/* Authentication uses the same brand, without changing account flows. */
+.portalShell .portalModule .settingsCard button.primary{background:#e31e24;border-color:#e31e24;color:white}
+.portalModule .financeActions{align-items:center;padding-bottom:18px;border-bottom:1px solid #e7e7ed;gap:10px}
+.portalModule .financeActions>button:first-child,.portalModule[data-module="Клиенты"] .crmTools>button{background:#e31e24;border-color:#e31e24;color:#fff}
+.portalModule .financeActions>input{margin-left:auto;max-width:330px;flex:1}
+.portalModule details{border:1px solid #e5e5ed;background:#fff;padding:14px 18px;border-radius:8px;margin:15px 0;font-size:12px}
+.portalModule summary{cursor:pointer;color:#72727e}
+.portalModule .panel{padding:24px;margin:20px 0;border:1px solid #e6e6ed;border-radius:10px}
+.portalModule .panel h2{font-size:16px;margin:0 0 18px;letter-spacing:-.2px}
+.portalModule .panel dl{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0;margin:10px 0 0}
+.portalModule .panel :is(dt,dd){margin:0;padding:12px 0;border-bottom:1px solid #eeeef3}
+.portalModule .panel dt{font-size:12px;color:#868692}.portalModule .panel dd{font-weight:600;color:#41414d}
+.portalModule .dot{background:#e31e24}.portalModule .dealTop small{background:#f4f4f7;color:#8c8c98}
+.authPage.itgAuth{font-family:Arial,"Helvetica Neue",sans-serif;background:#f6f6f8;color:#19191d;display:grid;grid-template-columns:minmax(0,1fr) minmax(380px,1fr);gap:0;padding:0;align-items:center;justify-items:stretch;min-height:100vh}
+.authIntro{background:#202024;color:white;align-self:stretch;display:flex;flex-direction:column;justify-content:center;padding:clamp(36px,6vw,100px);position:relative;overflow:hidden;min-height:100vh}
+.authEyebrow{font-size:10px;letter-spacing:2px;color:#b1b1bb}.authEyebrow::before{content:'';display:inline-block;width:6px;height:6px;background:#e31e24;border-radius:50%;margin-right:9px}
+.authIntro h2{font-size:clamp(36px,4vw,60px);font-weight:600;line-height:1.12;letter-spacing:-1.8px;margin:30px 0 22px;z-index:1}
+.authIntro>p{font-size:14px;line-height:1.8;color:#a6a6b1;max-width:300px;z-index:1}
+.authIntroArt{color:#e31e24;font-size:clamp(180px,24vw,380px);font-weight:700;line-height:1;align-self:flex-end;transform:rotate(-8deg);margin-top:25px}
+.authIntroFooter{position:absolute;bottom:40px;left:clamp(36px,6vw,100px);font-size:9px;letter-spacing:3px;color:#8d8d98}
+.itgAuth .authCard{width:min(440px,calc(100% - 48px));padding:38px;justify-self:center;border:1px solid #e7e7ed;border-radius:12px;background:#fff;box-shadow:0 10px 40px #19191d04;margin:32px 0}
+.itgAuth .brandMark{background:#e31e24;border-radius:8px;letter-spacing:-2px;padding-right:2px;font-size:19px}
+.itgAuth .brand b{font-size:20px;letter-spacing:.8px}.itgAuth .brand span{font-size:10px;color:#9696a0;margin-top:5px}
+.itgAuth .authCard h1{font-size:25px;letter-spacing:-.7px;margin:0 0 10px}.itgAuth .muted{color:#8a8a95;line-height:1.7;font-size:12px}
+.itgAuth .authCard fieldset{gap:18px;margin:26px 0 20px}.itgAuth .authCard label{font-size:11px;font-weight:500;color:#777782}
+.itgAuth .authCard input{font:inherit;font-size:13px;border-color:#e2e2e8;border-radius:7px;padding:12px;color:#33333f}
+.itgAuth .primary{background:#e31e24;border-color:#e31e24;color:white;min-height:42px;font-size:12px;border-radius:7px}
+.itgAuth .noteBtn{font-family:inherit;border-color:#e4e4ea;border-radius:7px;font-size:12px;color:#737380;background:white;width:100%;padding:11px;cursor:pointer}
+.itgAuth>.authCard:only-child{grid-column:1/-1}.itgAuth>p[role=status]{grid-column:1/-1;text-align:center;color:#858590}
+@media(max-width:1100px){.portalModule>header,.portalModule>.analyticsDashboard>header{align-items:flex-start;flex-wrap:wrap}.portalModule .headerActions{justify-content:flex-start}.portalModule .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.authIntro{padding:40px}.authIntro h2{font-size:40px}}
+@media(max-width:650px){.portalModule header h1{font-size:25px}.portalModule header p{font-size:11px}.portalModule .headerActions{width:100%}.portalModule .headerActions .primary{flex-basis:100%;justify-content:center}.portalModule :is(.crmTools,.calendarTools){gap:8px}.portalModule .crmTools>select,.portalModule .crmTools>input{width:100%;flex-basis:100%;max-width:none}.portalModule>label,.portalModule>.analyticsDashboard>label{display:grid;gap:7px}.portalModule>label>select,.portalModule>.analyticsDashboard>label>select{width:100%}.portalModule .crmTools .search{min-width:0;width:100%}.portalModule .drawer{padding:20px}.portalModule .dealModal{padding:20px}.portalModule .inlineForm{align-items:stretch}.portalModule .inlineForm label{flex-basis:100%}.portalModule .inlineForm>input,.portalModule .inlineForm>select{flex-basis:100%;width:100%}.portalModule .metrics{gap:10px}.portalModule .metric{padding:16px}.portalModule .metric>strong{font-size:26px}.portalModule .settingsCard{padding:18px}.portalModule .workGanttRow{grid-template-columns:1fr}.portalModule [aria-label="Результаты общего поиска"]{padding:16px}}
+@media(max-width:760px){.authPage.itgAuth{grid-template-columns:minmax(0,1fr)}.authIntro{min-height:0;padding:28px 28px 30px}.authIntro h2{font-size:29px;letter-spacing:-.8px;margin:18px 0 12px}.authIntro>p{font-size:11px;max-width:220px;margin:0}.authIntroArt{position:absolute;right:18px;bottom:12px;font-size:150px;margin:0;opacity:.6}.authIntroFooter{display:none}.itgAuth .authCard{margin:28px 0;width:min(440px,calc(100% - 32px));padding:28px}.itgAuth .authCard .brand{margin-bottom:25px}}
+@media(prefers-reduced-motion:reduce){.portalModule *{transition:none;animation:none}}
+@media print{.portalShell .homeTopbar{display:none}.portalModule,.portalModule .financeDrawer{position:static;overflow:visible}.portalModule .invoicePrint :is(th,td){color:#000;background:white}}
+@media(max-width:650px){.portalModule .financeActions>input{flex:1 1 100%;min-width:0;max-width:none;width:100%;margin:0}.portalModule .financeActions{flex-wrap:wrap}}

@@ -1,0 +1,3 @@
+/* Keep wide boards/tables inside their own scroll area, not the page grid. */
+.shell>main{min-width:0}
+.sidebar nav{min-height:0;overflow-y:auto;flex-shrink:1}
