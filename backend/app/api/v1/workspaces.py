@@ -10,7 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import current_user, workspace_access, workspace_admin
 from app.api.v1.schemas import WorkspaceOut
 from app.core.database import get_db
-from app.models import Deal, DealTask, Pipeline, PipelineStage, TaskReminder, User, Workspace, WorkspaceMember
+from app.models import Deal, Pipeline, PipelineStage, Task, TaskReminder, User, Workspace, WorkspaceMember
+from app.models import Project, ProjectMember
+from app.models.project_work import ProjectWorkStage
+from app.services.task_time import stop_timers
 from app.models.entities import StageType
 
 router = APIRouter(prefix="/workspaces", tags=["Workspaces"])
@@ -160,10 +163,16 @@ async def remove_member(member_id: uuid.UUID, workspace_id: uuid.UUID = Depends(
     actor = await lock_membership(db, workspace_id, user.id)
     member = await member_to_change(db, workspace_id, member_id, None)
     authorize_role(actor, member.role, None)
+    await stop_timers(db, workspace_id, user_id=member.user_id, reason="MEMBERSHIP_REVOKED")
     await db.execute(update(Deal).where(Deal.workspace_id == workspace_id,
                                         Deal.responsible_user_id == member.user_id).values(responsible_user_id=None))
-    await db.execute(update(DealTask).where(DealTask.workspace_id == workspace_id,
-                                            DealTask.assignee_user_id == member.user_id).values(assignee_user_id=None))
+    await db.execute(update(Task).where(Task.workspace_id == workspace_id,
+                                         Task.assignee_user_id == member.user_id).values(assignee_user_id=None))
+    await db.execute(update(Project).where(Project.workspace_id == workspace_id,
+        Project.manager_user_id == member.user_id).values(manager_user_id=None))
+    await db.execute(update(ProjectWorkStage).where(ProjectWorkStage.workspace_id == workspace_id,
+        ProjectWorkStage.manager_user_id == member.user_id).values(manager_user_id=None))
+    await db.execute(delete(ProjectMember).where(ProjectMember.workspace_id == workspace_id, ProjectMember.user_id == member.user_id))
     await db.execute(delete(TaskReminder).where(TaskReminder.workspace_id == workspace_id,
                                                  TaskReminder.recipient_user_id == member.user_id))
     await db.delete(member)

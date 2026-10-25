@@ -1,6 +1,6 @@
 # Матрица функционального соответствия Аспро.Cloud
 
-Статус на 23.10.2026. Источник UI — разрешённый тестовый портал `https://7e96.aspro.cloud/`; `https://aspro.cloud/help/` — официальная документация. Наличие приложения в каталоге подтверждает только доступность установки, а не проверенный сценарий. Исходный код, оформление, тексты и данные Аспро.Cloud не переносятся.
+Статус на 24.10.2026. Источник UI — разрешённый тестовый портал `https://7e96.aspro.cloud/`; `https://aspro.cloud/help/` — официальная документация. Наличие приложения в каталоге подтверждает только доступность установки, а не проверенный сценарий. Исходный код, оформление, тексты и данные Аспро.Cloud не переносятся. TESTED относится только к описанному объёму, не ко всему модулю референса.
 
 Статусы: `NOT_RESEARCHED`, `SPECIFIED`, `NOT_IMPLEMENTED`, `IN_PROGRESS`, `IMPLEMENTED`, `TESTED`, `VERIFIED`, `BLOCKED`. `VERIFIED` требует работающего сценария StudioFlow и доказательства теста. Ни одна строка пока не имеет такого полного доказательства.
 
@@ -19,16 +19,16 @@
 | CRM | Лента активностей и история стадий | `docs/REFERENCES.md`; заметки и переходы стадий реализованы | P1 | Модель, миграции `0004`–`0005`, scoped API, автоматический аудит стадии | Лента в карточке | Frontend 15/15; backend 26/26; E2E 1/1 | TESTED |
 | CRM | Контакты и карточка компании | UI `7e96.aspro.cloud`, REA `ev_6669d37eea8568c3eec6c4ba07c12af266b7a42cae77828b18fe40d5fc5f5034`, `ev_326327d4880a21f89e88d5bcdd6a2ee6e00524245cb1801f1a732ebe14b21500` | P1 | Профили компаний и контактов, связи со сделками, workspace isolation, миграция `0007` | Каталоги компаний/контактов, выбор контакта в сделке | Backend 32/32, frontend 22/22, E2E 1/1; [компании](aspro-company-profile.md), [контакты](aspro-contacts.md) | IN_PROGRESS |
 | CRM | Настраиваемые воронки и стадии | UI `7e96.aspro.cloud`, REA `ev_699c303293b333a90ee8fb190c2420ec4577870624be9f0f5c7f069bed40543c`; [справка Аспро](https://aspro.cloud/help/articles/3301-7329-7330--sozdanie-i-redaktirovanie-voronki-prodazh/) | P1 | Жизненный цикл воронок, CRUD стадий, порядок, защита сделок | UI выбора и управления воронками/стадиями | Backend 30/30, frontend 20/20, E2E 1/1; [воронки](aspro-pipeline-lifecycle.md), [стадии](aspro-pipeline-stages.md) | IN_PROGRESS |
-| CRM | Теги, пользовательские поля, файлы, наблюдатели | UI: форма новой сделки | P1 | Нет | Нет | Нет | SPECIFIED |
+| CRM | Теги, пользовательские поля, файлы, наблюдатели, UTM, композер активностей | UI: карточка сделки `/_module/crm/view/lead/10?tab=lead_info`, REA `ev_97ac6b8b659b21aceb5b23c1717b735912cd77906caa694178a2be2ab9d17493`; [сценарий](aspro/scenarios/deal-card-v2.md) | P1 | `deal_tags`, `deal_watchers`, `deal_contacts`, `deal_attachments`, `deal_custom_values`, UTM в `deals`; миграция `0011` | `DealDetails.tsx`, тип записи в истории | Backend 42/42, frontend 28/28, E2E 1/1, сборка | TESTED |
 | CRM | Источники, причины отказа, фильтры, табличный вид | UI: Kanban, вкладки и фильтры | P1 | Частично | Частично | Частично | SPECIFIED |
-| Задачи | CRUD, подзадачи, чек-листы, сроки, исполнители | [Исследование формы и доски](aspro-task-research.md), REA evidence `ev_d8b0862920e64c2c67a1e98e72e75d5ddff6a760fe3796be8597f7b624d9f71c` | P2 | Нет | Демонстрация | Нет | SPECIFIED |
-| Проекты | CRUD, этапы, команда, шаблоны, Гант | UI: модуль установлен; детали не исследованы | P2 | Нет | Демонстрация | Нет | NOT_RESEARCHED |
-| Проекты | Создание проекта из сделки | UI: подсказка на рабочем столе; сценарий не проверен | P2 | Нет | Нет | Нет | SPECIFIED |
-| Финансы | Счета, операции, бюджеты, платёжный календарь | UI: модули установлены; детали не исследованы | P2 | Нет | Демонстрация | Нет | NOT_RESEARCHED |
-| Документы | Шаблоны и документы из CRM | UI: приложение установлено; детали не исследованы | P2 | Нет | Нет | Нет | NOT_RESEARCHED |
+| Задачи | CRUD, подзадачи, чек-листы, сроки, исполнители | [Исследование формы и доски](aspro-task-research.md), REA evidence `ev_d8b0862920e64c2c67a1e98e72e75d5ddff6a760fe3796be8597f7b624d9f71c`; [сценарий](aspro/scenarios/tasks-module.md) | P2 | `tasks`, `task_statuses`, `task_checklist_items`, `task_watchers`; миграция `0012`, перенос `deal_tasks` | `Tasks.tsx`: Канбан, Список, карточка, чек-лист, подзадачи, статусы | Backend 45/45, frontend 31/31, E2E 1/1, сборка | TESTED |
+| Проекты | CRUD, этапы, команда (без шаблонов и Ганта) | UI `7e96.aspro.cloud`: колонки списка и вкладки карточки, REA `ev_fa114a529f6c7c358f26e4f0f48c5e44d930116357cddf912f64d18e7447f5e5`, `ev_761b20d376adb0852847031c7c065f77d89fd6d80d00f16b0e2678480f661277`; [сценарий](aspro/scenarios/projects-module.md) | P2 | `projects`, `project_stages`, `project_members`, `project_contacts`, `project_events`; `0013`, guards `0015` | `Projects.tsx`: список, вкладки, карточка, команда, события, архив | `test_projects.py`, `Projects.test.tsx`, `e2e/projects.spec.ts`; общий прогон 57/38/3 | TESTED |
+| Проекты | Создание проекта из сделки | [Сценарий](aspro/scenarios/projects-module.md): только выигранная сделка, перенос клиента, суммы и контактов, защита от дубля | P2 | `POST /projects`, `force` для повторного создания | Кнопка «Новый проект» с выбором сделки | Backend 48/48, frontend 34/34, E2E 1/1 | TESTED |
+| Финансы | Счета, поступления, статусы оплат, организации, акты (без бюджетов/календаря) | UI: «Список счетов», колонки и печатные формы, REA `ev_fa114a529f6c7c358f26e4f0f48c5e44d930116357cddf912f64d18e7447f5e5`; [сценарий](aspro/scenarios/finance-module.md) | P2 | `finance.py`, `0014`; атомарная нумерация, платежи, workspace-FK, OWNER/ADMIN | `Finance.tsx`: список, создание, платежи, акты, печать/PDF | `test_finance.py`, `test_finance_concurrency.py`, `Finance.test.tsx`, `e2e/finance.spec.ts`; общий прогон 57/38/3 | TESTED |
+| Документы | Собственная печатная форма счёта; общий конструктор не реализован | UI: «Формы» для счетов, смет и актов, REA `ev_7c633799e67e308e99b897860d40ee3b5fd46e33d731f8477f9eb8cf300d602b`; в объёме P2 только счёт | P2 | Снимки реквизитов в счёте | `Finance.tsx`: браузерная печать/PDF | `Finance.test.tsx`, генерация PDF в `finance.spec.ts`; конструктор не проверен | IN_PROGRESS |
 | Коммуникации | Почта, чат, телефония, уведомления | UI: приложения установлены; провайдеры не подключены | P2 | Нет | Нет | Нет | NOT_RESEARCHED |
-| Автоматизация | Триггеры, действия, webhooks, n8n | UI: «Бизнес-процессы» установлен; детали не исследованы | P2 | Нет | Нет | Нет | NOT_RESEARCHED |
-| Аналитика | Продажи, проекты, финансы, KPI | UI: вкладки рабочего стола; StudioFlow демонстрация | P3 | Нет | Демонстрация | Нет | NOT_RESEARCHED |
+| Автоматизация | Триггеры, действия, webhooks, n8n | Документированные webhook CRM/задач; собственная ограниченная очередь событий | P2 | `services/webhooks.py`, `0024`, отдельный worker | `Webhooks.tsx` | backend transport/concurrency, frontend, E2E очереди; внешняя доставка не проверена | TESTED в ограниченном объёме |
+| Аналитика | Текущие продажи, задачи, проекты; без финансового ядра | UI: вкладки рабочего стола; собственные формулы | P3 | `analytics.py`, SQL-агрегации | `LiveDashboard.tsx`, без демоданных | backend/local dates/currency, frontend, E2E | TESTED в ограниченном объёме |
 | Администрирование | Команды, RBAC, аудит, импорт/экспорт | UI: «Команда», «Группы», CSV-импорт; детали не исследованы | P3 | Частично | Частично | Частично | NOT_RESEARCHED |
 | Дополнительно | База знаний, Agile, каталог, тайм-трекер, клиентский кабинет, HR, имущество | UI: приложения доступны/установлены; детали не исследованы | P3 | Нет | Нет | Нет | NOT_RESEARCHED |
 | Интеграции | Банки, 1С, внешние CRM, рассылки | Каталог 62 приложений; доступы к внешним системам не проверены | P3 | Нет | Нет | Нет | NOT_RESEARCHED |
@@ -37,9 +37,36 @@
 
 На главной странице портала REA зафиксировал 111 загруженных скриптов, кандидаты маршрутов и 48 кандидатов сетевых адресов. Это статические признаки, не доказательство выполнения всех маршрутов или бизнес-правил. Пассивная инспекция страницы CRM подтвердила форму сделки и поля, отмеченные выше. REA evidence идентификаторы и снимки не содержат пользовательских данных в репозитории.
 
+Повторный проход 23.10.2026 покрыл все разделы верхнего меню и карточки сделки и проекта; каталог функций, Evidence и решения по приоритетам собраны в [инвентаризации](aspro/feature-inventory.md), новые сценарии — в [docs/aspro/scenarios](aspro/scenarios).
+
 ## Покрытие
 
-Текущая рабочая матрица: 24 строки; `VERIFIED`: 0; покрытие по строгому критерию мастер-промпта: **0/24 = 0%**. Это не означает отсутствие работающего MVP: проверенные изолированными тестами сценарии ещё не дают полного соответствия Аспро.Cloud. Матрица будет расширяться при исследовании каждого подраздела; знаменатель не окончательный.
+Число строк не является процентом готовности CRM: строки имеют разный объём, многие объединяют несколько функций. Проверки не дают полного соответствия Аспро.Cloud. Исторические числа выше относятся к моменту реализации. Общий срез 24.10.2026: backend 95/95, frontend 68/68 + build, E2E 8/8. CSV и DnD прошли после исправления компоновки и выбора видимой области перетаскивания в браузерном тесте.
+
+### Дополнения 24.10.2026
+
+| Сценарий | Код/миграция | Проверки | Статус |
+| --- | --- | --- | --- |
+| [Реальные файлы сделки](aspro/scenarios/file-attachments.md) | `attachments.py`, `0016`, `DealDetails.tsx` | backend, frontend, побайтный E2E | TESTED |
+| [Календарь задач](aspro/scenarios/task-calendar.md) | `TaskCalendar.tsx`, пагинация | frontend и E2E в Asia/Yekaterinburg | TESTED |
+| [Адресные упоминания](aspro/scenarios/mention-notifications.md) | `notifications.py`, `0017`, `Notifications.tsx` | backend, frontend, двухаккаунтный E2E | TESTED |
+| [Основной контакт](aspro/scenarios/deal-contact-consistency.md) | `crm.py`, `0018` | backend и заполненная миграция | TESTED |
+| [План/Гант проекта](aspro/scenarios/project-work-plan.md) | `project_work.py`, `0019`, `ProjectWorkPlan.tsx` | backend, frontend, E2E | TESTED |
+| [Шаблоны плана](aspro/scenarios/project-templates.md) | `project_templates.py`, `0020` | backend rollback, frontend, E2E | TESTED |
+| [Входящие заявки](aspro/scenarios/incoming-leads.md) | `integrations.py`, `0021`, `Integrations.tsx` | backend, независимые конкурентные транзакции, frontend, E2E | TESTED |
+| [Отдельный раздел клиентов](aspro/scenarios/client-directory-page.md) | `Clients.tsx`, прежние CRUD API | frontend и CRM E2E | TESTED |
+| [Учёт времени задач](aspro/scenarios/task-time-tracking.md) | `task_time.py`, `0022`, `TaskTime.tsx` | backend, frontend, независимые старты, E2E | TESTED |
+| [Повторение после завершения](aspro/scenarios/task-recurrence.md) | `task_recurrence.py`, `0023`, `TaskRecurrence.tsx` | backend, независимые завершения, frontend, E2E | TESTED |
+| [Исходящие webhooks](aspro/scenarios/outgoing-webhooks.md) | `webhooks.py`, `0024`, worker, `Webhooks.tsx` | backend transport/rollback/concurrency, frontend, E2E очереди | TESTED |
+| [Живые Dashboard/KPI](aspro/scenarios/live-dashboard.md) | `analytics.py`, `LiveDashboard.tsx` | backend, frontend, E2E | TESTED |
+| [CSV-экспорт](aspro/scenarios/csv-export.md) | `exports.py`, `CsvExport.tsx` | backend/frontend, E2E скачивания и регрессия CRM DnD | TESTED |
+| [Общий поиск студии](aspro/scenarios/global-search.md) | `search.py`, `GlobalSearch.tsx`, маршруты карточек | пять типов, workspace, literal wildcard, страницы; frontend и E2E переходов | TESTED |
+
+Актуализация после общего поиска: backend 97/97, frontend 74/74 + build, E2E 9/9. Это ограниченный поиск в выбранной студии, не полнотекстовый движок и не подтверждение полного соответствия референсу.
+
+TESTED: [аудит основных изменений сделок](aspro/scenarios/deal-audit.md), `0025`, `DealAudit.tsx` в настройках OWNER/ADMIN. Актуальный общий срез: backend 100/100, frontend 76/76 + build, E2E 10/10. Сохранность автора после отзыва доступа и downgrade/upgrade проверены; усиленный rollback дополнительно 3/3. Это не аудит всех модулей/endpoint.
+
+TESTED только выявление [кандидатов в дубли](aspro/scenarios/duplicate-candidates.md): компании/контакты, причины email/телефон/имя, страницы и точное открытие карточки без изменения данных. Объединение НЕ реализовано. Последний общий срез: backend 103/103, frontend 79/79 + build, E2E 11/11.
 
 ## Следующее исследование
 

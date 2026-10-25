@@ -6,6 +6,7 @@ import {type Client, type Contact, type Deal, type DealTask, type FollowUpComple
 const deal: Deal = {id: 'd1', workspace_id: 'w1', title: 'Сайт клиента', client_id: 'c1', contact_id: null, pipeline_id: 'p1', stage_id: 's1',
   responsible_user_id: null, amount: '65000.25', currency: 'RUB', contact_name: 'Мария', source: 'Сайт', description: null,
   start_date: null, end_date: null,
+  utm_source: null, utm_medium: null, utm_campaign: null, utm_term: null, utm_content: null, http_referrer: null,
   follow_up_at: '2026-12-01T11:30:00Z', follow_up_action: 'proposal', follow_up_comment: 'Отправить КП',
   created_at: '2026-09-01T10:00:00Z', updated_at: '2026-09-01T10:00:00Z'};
 let stored: Deal[];
@@ -20,9 +21,15 @@ let clientRows: Client[];
 let contactRows: Contact[];
 let taskRows: DealTask[];
 let reminderRows: TaskReminder[];
+let tagRows: {id: string; name: string; created_at: string}[];
+let watcherRows: {user_id: string; first_name: string; last_name: string | null; email: string}[];
+let linkRows: {contact_id: string; is_primary: boolean; first_name: string; last_name: string | null; middle_name: string | null; phone: string | null; email: string | null}[];
+let attachmentRows: {id: string; filename: string; content_type: string; size_bytes: number; uploaded_by_user_id: string | null; uploaded_by_name: string; created_at: string}[];
+let customRows: {key: string; type: 'TEXT' | 'NUMBER' | 'DATE'; value: string}[];
 
 beforeEach(() => {
-  stored = [{...deal}]; notes = []; completed = []; taskRows = []; reminderRows = []; failMutation = false; failLoad = false;
+  stored = [{...deal}]; notes = []; completed = []; taskRows = []; reminderRows = [];
+  tagRows = []; watcherRows = []; linkRows = []; attachmentRows = []; customRows = []; failMutation = false; failLoad = false;
   stages = [{id: 's1', pipeline_id: 'p1', name: 'Новый лид', position: 0, stage_type: 'OPEN', color: null}, {id: 's2', pipeline_id: 'p1', name: 'Контакт', position: 1, stage_type: 'OPEN', color: null}];
   pipelineRows = [{id: 'p1', name: 'Продажи', is_default: true, is_active: true, stages}];
   clientRows = [{id: 'c1', type: 'COMPANY', name: 'Клиент', phone: null, email: null, website: null, notes: null}];
@@ -53,6 +60,49 @@ beforeEach(() => {
       if (method === 'DELETE') {stages = stages.filter(stage => stage.id !== id).map((stage, position) => ({...stage, position})); pipelineRows[0].stages = stages; return response(null, 204);}
     }
     if (url.endsWith('/members')) return response([{id: 'm1', user_id: 'u1', email: 'manager@example.com', first_name: 'Менеджер', role: 'MANAGER'}]);
+    if (url.includes('/deals/') && url.endsWith('/tags')) {
+      if (method === 'GET') return response(tagRows);
+      const item = {id: `tag${tagRows.length + 1}`, name: data.name, created_at: '2026-10-23T10:00:00Z'};
+      if (!tagRows.some(row => row.name.toLocaleLowerCase() === item.name.toLocaleLowerCase())) tagRows.push(item);
+      return response(tagRows.find(row => row.name.toLocaleLowerCase() === item.name.toLocaleLowerCase()), 201);
+    }
+    if (url.includes('/deals/') && url.includes('/tags/') && method === 'DELETE') {
+      tagRows = tagRows.filter(row => row.id !== url.split('/tags/')[1]); return response(null, 204);
+    }
+    if (url.includes('/deals/') && url.endsWith('/watchers')) {
+      if (method === 'GET') return response(watcherRows);
+      const item = {user_id: data.user_id, first_name: 'Менеджер', last_name: null, email: 'manager@example.com'};
+      watcherRows.push(item); return response(item, 201);
+    }
+    if (url.includes('/deals/') && url.includes('/watchers/') && method === 'DELETE') {
+      watcherRows = watcherRows.filter(row => row.user_id !== url.split('/watchers/')[1]); return response(null, 204);
+    }
+    if (url.includes('/deals/') && url.endsWith('/contacts')) {
+      if (method === 'GET') return response(linkRows);
+      const contact = contactRows.find(row => row.id === data.contact_id)!;
+      const item = {contact_id: data.contact_id, is_primary: Boolean(data.is_primary), first_name: contact.first_name,
+        last_name: contact.last_name, middle_name: contact.middle_name, phone: contact.phone, email: contact.email};
+      linkRows.push(item); return response(item, 201);
+    }
+    if (url.includes('/deals/') && url.includes('/contacts/')) {
+      const contactId = url.split('/contacts/')[1];
+      if (method === 'DELETE') {linkRows = linkRows.filter(row => row.contact_id !== contactId); return response(null, 204);}
+      linkRows = linkRows.map(row => ({...row, is_primary: row.contact_id === contactId}));
+      return response(linkRows.find(row => row.contact_id === contactId));
+    }
+    if (url.includes('/deals/') && url.endsWith('/attachments')) {
+      if (method === 'GET') return response(attachmentRows);
+      const item = {id: `a${attachmentRows.length + 1}`, filename: data.filename, content_type: data.content_type,
+        size_bytes: data.size_bytes, uploaded_by_user_id: 'u1', uploaded_by_name: 'Менеджер', created_at: '2026-10-23T10:00:00Z'};
+      attachmentRows.unshift(item); return response(item, 201);
+    }
+    if (url.includes('/deals/') && url.includes('/attachments/') && method === 'DELETE') {
+      attachmentRows = attachmentRows.filter(row => row.id !== url.split('/attachments/')[1]); return response(null, 204);
+    }
+    if (url.includes('/deals/') && url.endsWith('/custom-fields')) {
+      if (method === 'PUT') customRows = [...data.values].sort((a: {key: string}, b: {key: string}) => a.key.localeCompare(b.key));
+      return response({values: customRows});
+    }
     if (url.endsWith('/contacts')) {
       if (method === 'POST') {const item: Contact = {id: `t${contactRows.length + 1}`, workspace_id: 'w1', first_name: data.first_name,
         last_name: data.last_name || null, middle_name: data.middle_name || null, phone: data.phone || null,
@@ -414,6 +464,56 @@ describe('CRM persistence', () => {
     fireEvent.click(within(panel).getByRole('button', {name: 'Прочитано'}));
     await waitFor(() => expect(reminderRows[0].acknowledged_at).not.toBeNull());
     expect(within(panel).queryByText('Напоминания')).toBeNull();
+  });
+
+  it('manages tags, watchers and linked contacts in the deal card', async () => {
+    contactRows = [{id: 't1', workspace_id: 'w1', first_name: 'Мария', last_name: 'Иванова', middle_name: null, phone: '+7 900',
+      email: null, website: null, notes: null, client_ids: ['c1'], created_at: '2026-10-23T10:00:00Z', updated_at: '2026-10-23T10:00:00Z'}];
+    render(<CRM/>);
+    fireEvent.click(await screen.findByRole('article', {name: 'Открыть Сайт клиента'}));
+    const drawer = await screen.findByRole('dialog', {name: 'Карточка сделки'});
+    await within(drawer).findByText('Тегов пока нет.');
+    fireEvent.change(within(drawer).getByLabelText('Новый тег'), {target: {value: 'важное'}});
+    fireEvent.click(within(drawer).getByRole('button', {name: 'Добавить тег'}));
+    await waitFor(() => expect(tagRows).toHaveLength(1));
+    expect(within(drawer).getByRole('button', {name: 'Убрать тег важное'})).toBeTruthy();
+    fireEvent.change(within(drawer).getByLabelText('Новый наблюдатель'), {target: {value: 'u1'}});
+    fireEvent.click(within(drawer).getByRole('button', {name: 'Добавить наблюдателя'}));
+    await waitFor(() => expect(watcherRows).toHaveLength(1));
+    const watcherList = within(drawer).getByRole('list', {name: 'Наблюдатели сделки'});
+    expect(within(watcherList).getByText(/Менеджер · manager@example.com/)).toBeTruthy();
+    fireEvent.change(within(drawer).getByLabelText('Новый контакт сделки'), {target: {value: 't1'}});
+    fireEvent.click(within(drawer).getByRole('button', {name: 'Связать контакт'}));
+    await waitFor(() => expect(linkRows).toHaveLength(1));
+    fireEvent.click(within(drawer).getByRole('button', {name: 'Сделать основным'}));
+    await waitFor(() => expect(linkRows[0].is_primary).toBe(true));
+    expect(within(drawer).getByText('Основной')).toBeTruthy();
+    fireEvent.click(within(drawer).getByRole('button', {name: 'Убрать наблюдателя Менеджер'}));
+    await waitFor(() => expect(watcherRows).toHaveLength(0));
+    fireEvent.click(within(drawer).getByRole('button', {name: 'Убрать тег важное'}));
+    await waitFor(() => expect(tagRows).toHaveLength(0));
+  });
+
+  it('saves UTM marks and custom fields and reports API errors', async () => {
+    render(<CRM/>);
+    fireEvent.click(await screen.findByRole('article', {name: 'Открыть Сайт клиента'}));
+    const drawer = await screen.findByRole('dialog', {name: 'Карточка сделки'});
+    fireEvent.change(within(drawer).getByLabelText('utm_source'), {target: {value: 'yandex'}});
+    fireEvent.change(within(drawer).getByLabelText('http_referrer'), {target: {value: 'https://example.com'}});
+    failMutation = true;
+    fireEvent.click(within(drawer).getByRole('button', {name: 'Сохранить UTM-метки'}));
+    await within(drawer).findByRole('alert');
+    expect((within(drawer).getByLabelText('utm_source') as HTMLInputElement).value).toBe('yandex');
+    failMutation = false;
+    fireEvent.click(within(drawer).getByRole('button', {name: 'Сохранить UTM-метки'}));
+    await waitFor(() => expect(stored[0].utm_source).toBe('yandex'));
+    fireEvent.click(within(drawer).getByRole('button', {name: 'Добавить поле'}));
+    fireEvent.change(within(drawer).getByLabelText('Ключ поля 1'), {target: {value: 'Бюджет'}});
+    fireEvent.change(within(drawer).getByLabelText('Тип поля 1'), {target: {value: 'NUMBER'}});
+    fireEvent.change(within(drawer).getByLabelText('Значение поля 1'), {target: {value: '120000.50'}});
+    fireEvent.click(within(drawer).getByRole('button', {name: 'Сохранить поля'}));
+    await waitFor(() => expect(customRows).toHaveLength(1));
+    expect(customRows[0]).toEqual({key: 'Бюджет', type: 'NUMBER', value: '120000.50'});
   });
 
   it('deletes a deal and displays an empty state', async () => {

@@ -1,0 +1,19 @@
+.dealDetailBlock{margin:14px 0;padding-top:10px;border-top:1px solid #edf0f4}
+.dealDetailBlock:first-of-type{border-top:0;padding-top:0}
+.dealDetailBlock h4{margin:0 0 8px;font-size:13px;color:#344054}
+.inlineForm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.inlineForm input,.inlineForm select,.utmGrid input{flex:1;min-width:140px;border:1px solid #dfe3e9;border-radius:8px;padding:8px;font:inherit;font-size:13px}
+.inlineForm button,.dealDetailBlock button{border:0;background:#eef2ff;color:#4f46e5;border-radius:8px;padding:8px 11px;cursor:pointer;font-size:12px}
+.inlineForm button:disabled,.dealDetailBlock button:disabled{opacity:.55;cursor:not-allowed}
+.tagList,.plainList{list-style:none;padding:0;margin:6px 0}
+.tagList{display:flex;flex-wrap:wrap;gap:6px}
+.tagList li{display:flex;align-items:center;gap:4px;background:#eef2ff;border-radius:12px;padding:3px 6px 3px 10px}
+.tagChip{font-size:12px;color:#4338ca}
+.tagList li button{padding:0 4px;background:transparent;font-size:14px;line-height:1}
+.plainList li{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid #f2f4f7;font-size:13px}
+.plainList li:last-child{border-bottom:0}
+.plainList li input,.plainList li select{flex:1;min-width:120px;border:1px solid #dfe3e9;border-radius:8px;padding:7px;font:inherit;font-size:13px}
+.primaryBadge{color:#047857;background:#ecfdf3;border-radius:8px;padding:3px 8px;font-size:11px}
+.utmGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:6px 0}
+.utmGrid label{display:grid;gap:4px;font-size:11px;color:#667085}
+@media(max-width:640px){.utmGrid{grid-template-columns:1fr}}

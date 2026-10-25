@@ -1,9 +1,13 @@
 import {useEffect, useRef, useState, type FormEvent} from 'react';
-import {CalendarClock, Plus, Search, X} from 'lucide-react';
-import {type Action, type Client, type Contact, type Deal, type DealActivity, type DealInput, type FollowUpCompletion, type Member, type Pipeline, type Stage, type Workspace,
-  contactName, errorText, loadDeals, localDateTime, money, request} from './api';
+import CsvExport from './CsvExport';
+import {Building2, CalendarClock, Columns3, Plus, Search, Settings2, UsersRound, X} from 'lucide-react';
+import WorkspaceTopbar from './WorkspaceTopbar';
+import type {HomeDestination} from './HomeOverview';
+import {type Action, type ActivityKind, type Client, type Contact, type Deal, type DealActivity, type DealInput, type FollowUpCompletion, type Member, type Pipeline, type Stage, type Workspace,
+  activityKindNames, contactName, errorText, loadDeals, localDateTime, money, request} from './api';
 import ClientDirectory from './ClientDirectory';
 import ContactDirectory from './ContactDirectory';
+import DealDetails from './DealDetails';
 import DealTasks from './DealTasks';
 import MyDay from './MyDay';
 
@@ -131,7 +135,7 @@ function DealForm({deal, clients, contacts, members, pipelines, initialPipeline,
         <label>Название сделки<input name="title" defaultValue={deal?.title} required maxLength={255}/></label>
         <label>Компания / клиент<select value={clientId} onChange={e => {setClientId(e.target.value); setContactId('');}}><option value="">Новый клиент</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         {!clientId && <label>Название клиента<input name="newClient" required maxLength={255}/></label>}
-        <label>Связанный контакт<select value={contactId} onChange={e => setContactId(e.target.value)}><option value="">Не выбран</option>{contacts.filter(c => c.client_ids.includes(clientId)).map(c => <option key={c.id} value={c.id}>{contactName(c)}</option>)}</select></label>
+        <label>Связанный контакт<select value={contactId} onChange={e => setContactId(e.target.value)}><option value="">Не выбран</option>{contacts.filter(c => c.client_ids.includes(clientId) || c.id === contactId).map(c => <option key={c.id} value={c.id}>{contactName(c)}{!c.client_ids.includes(clientId) ? ' · другая компания' : ''}</option>)}</select></label>
         {!contactId && <label>Контактное лицо текстом<input name="contact" defaultValue={deal?.contact_name || ''} maxLength={255}/></label>}
         <label>Сумма<input name="amount" type="number" min="0" max="999999999999.99" step="0.01" defaultValue={deal?.amount || '50000'} required/></label>
         <label>Источник<input name="source" list="sources" defaultValue={deal?.source || ''} maxLength={100}/><datalist id="sources">{['2ГИС', 'WhatsApp', 'Сайт', 'Рекомендация', 'Холодный'].map(s => <option key={s}>{s}</option>)}</datalist></label>
@@ -148,13 +152,14 @@ function DealForm({deal, clients, contacts, members, pipelines, initialPipeline,
   </div>;
 }
 
-function DealDrawer({deal, client, contact, stage, responsibleName, base, members, busy, canDelete, onClose, onEdit, onDelete, onFollow, onComplete, onOpenClient, onOpenContact}: {
-  deal: Deal; client?: Client; contact?: Contact; stage?: string; responsibleName?: string; base: string; members: Member[]; busy: boolean; canDelete: boolean;
+function DealDrawer({deal, client, contact, contacts, stage, responsibleName, base, members, busy, canDelete, onClose, onEdit, onDelete, onFollow, onComplete, onOpenClient, onOpenContact, onDealChange}: {
+  deal: Deal; client?: Client; contact?: Contact; contacts: Contact[]; stage?: string; responsibleName?: string; base: string; members: Member[]; busy: boolean; canDelete: boolean;
   onClose: () => void; onEdit: () => void; onDelete: () => Promise<void>;
   onFollow: (value: {at: string; action: Action; comment: string} | null) => Promise<void>;
   onComplete: (outcome: string) => Promise<FollowUpCompletion>;
   onOpenClient: () => void;
   onOpenContact: () => void;
+  onDealChange: (deal: Deal) => void;
 }) {
   const [next, setNext] = useState(localDateTime(deal.follow_up_at));
   const [action, setAction] = useState<Action>(deal.follow_up_action || 'call');
@@ -163,6 +168,8 @@ function DealDrawer({deal, client, contact, stage, responsibleName, base, member
   const [error, setError] = useState('');
   const [activities, setActivities] = useState<DealActivity[]>([]);
   const [activityBody, setActivityBody] = useState('');
+  const [activityKind, setActivityKind] = useState<ActivityKind>('NOTE');
+  const [activityRecipient, setActivityRecipient] = useState('');
   const [activityLoading, setActivityLoading] = useState(true);
   const [activityBusy, setActivityBusy] = useState(false);
   const [activityError, setActivityError] = useState('');
@@ -194,8 +201,9 @@ function DealDrawer({deal, client, contact, stage, responsibleName, base, member
     if (!activityBody.trim() || activityBusy) return;
     setActivityBusy(true); setActivityError('');
     try {
-      const row = await request<DealActivity>(`${base}/deals/${deal.id}/activities`, 'POST', {body: activityBody.trim()});
-      setActivities(previous => [row, ...previous]); setActivityBody('');
+      const row = await request<DealActivity>(`${base}/deals/${deal.id}/activities`, 'POST', {body: activityBody.trim(), kind: activityKind,
+        ...(activityKind === 'MENTION' ? {recipient_user_id: activityRecipient} : {})});
+      setActivities(previous => [row, ...previous]); setActivityBody(''); setActivityKind('NOTE'); setActivityRecipient('');
     } catch (e) {setActivityError(errorText(e));}
     finally {setActivityBusy(false);}
   };
@@ -224,6 +232,7 @@ function DealDrawer({deal, client, contact, stage, responsibleName, base, member
     <div className="quickActions"><button disabled={busy} onClick={onEdit}>Редактировать</button>{canDelete && <button disabled={busy} onClick={async () => {if (window.confirm('Удалить сделку?')) {try {await onDelete();} catch(e) {setError(errorText(e));}}}}>Удалить</button>}</div>
     <section className="drawerSection"><h3>Контакт</h3><p>{client && <button type="button" className="clientLink" onClick={onOpenClient}>{client.name}</button>}</p><p>{contact ? <button type="button" className="clientLink" onClick={onOpenContact}>{contactName(contact)}</button> : deal.contact_name || 'Контакт не указан'}</p><p>Ответственный: {responsibleName || 'Не назначен'}</p><p>Источник: {deal.source || 'Не указан'}</p><p>Сроки: {deal.start_date || '—'} — {deal.end_date || '—'}</p>{deal.description && <p>{deal.description}</p>}</section>
     <DealTasks base={base} dealId={deal.id} members={members} canDelete={canDelete}/>
+    <DealDetails base={base} deal={deal} members={members} contacts={contacts} onDealChange={onDealChange}/>
     <form className="drawerSection followEditor" onSubmit={e => {e.preventDefault(); void save();}}>
       <h3>Следующий контакт</h3><p className="muted">Дата и время в часовом поясе вашего устройства.</p>
       <fieldset disabled={busy}>
@@ -243,17 +252,22 @@ function DealDrawer({deal, client, contact, stage, responsibleName, base, member
     {error && <p role="alert" className="errorMessage">{error}</p>}{status && <p role="status">{status}</p>}
     <section className="drawerSection activitySection"><h3>История действий</h3>
       {activityLoading ? <p role="status">Загрузка истории…</p> : activityError && !activities.length ? <p role="alert">{activityError} <button type="button" onClick={() => setActivityReload(n => n + 1)}>Повторить</button></p> : !activities.length ? <p className="muted">Записей пока нет.</p> :
-        <ol className="activityList">{activities.map(item => <li key={item.id}><strong>{item.author_name}</strong> · <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString('ru-RU')}</time>{item.kind === 'STAGE_CHANGE' && <span className="activityKind">Смена стадии</span>}<p>{item.body}</p></li>)}</ol>}
-      <form onSubmit={e => void addActivity(e)}><label>Новая заметка<textarea value={activityBody} maxLength={10000} onChange={e => setActivityBody(e.target.value)}/></label><button disabled={activityBusy || !activityBody.trim()}>{activityBusy ? 'Сохранение…' : 'Добавить в историю'}</button></form>
+        <ol className="activityList">{activities.map(item => <li key={item.id}><strong>{item.author_name}</strong> · <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString('ru-RU')}</time>{item.kind !== 'NOTE' && <span className="activityKind">{activityKindNames[item.kind]}</span>}{item.recipient_name && <p>Адресат: {item.recipient_name}</p>}<p>{item.body}</p></li>)}</ol>}
+      <form onSubmit={e => void addActivity(e)}><label>Тип записи<select aria-label="Тип записи" value={activityKind} onChange={e => setActivityKind(e.target.value as ActivityKind)}><option value="NOTE">Комментарий</option><option value="EVENT">Событие</option><option value="MENTION">Призвать к ответу</option></select></label>
+        {activityKind === 'MENTION' && <label>Адресат упоминания<select required value={activityRecipient} onChange={e => setActivityRecipient(e.target.value)}><option value="">Выберите участника</option>{members.map(member => <option key={member.user_id} value={member.user_id}>{member.first_name} · {member.email}</option>)}</select></label>}
+        <label>Новая заметка<textarea value={activityBody} maxLength={10000} onChange={e => setActivityBody(e.target.value)}/></label><button disabled={activityBusy || !activityBody.trim() || (activityKind === 'MENTION' && !activityRecipient)}>{activityBusy ? 'Сохранение…' : 'Добавить в историю'}</button></form>
       {activityError && activities.length > 0 && <p role="alert" className="errorMessage">{activityError}</p>}
     </section>
     <section className="drawerSection"><h3>Даты сделки</h3><p>Создана: {new Date(deal.created_at).toLocaleString('ru-RU')}</p><p>Обновлена: {new Date(deal.updated_at).toLocaleString('ru-RU')}</p></section>
   </aside></div>;
 }
 
-export default function CRM() {
+export default function CRM({initialWorkspaceId = '', initialDealId, userName, onNavigate}: {
+  initialWorkspaceId?: string; initialDealId?: string; userName?: string; onNavigate?: (page: HomeDestination) => void;
+} = {}) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [workspaceId, setWorkspaceId] = useState('');
+  const [workspaceId, setWorkspaceId] = useState(initialWorkspaceId);
+  const initialOpened = useRef(false);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [pipelineId, setPipelineId] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
@@ -275,6 +289,7 @@ export default function CRM() {
   const [clientDirectory, setClientDirectory] = useState<string | null>(null);
   const [contactDirectory, setContactDirectory] = useState<{initialId?: string; initialClientId?: string} | null>(null);
   const [myDayOpen, setMyDayOpen] = useState(false);
+  const [dragStage, setDragStage] = useState<string | null>(null);
   const base = `/workspaces/${workspaceId}`;
 
   useEffect(() => {
@@ -297,6 +312,12 @@ export default function CRM() {
         ]);
         if (controller.signal.aborted) return;
         setPipelines(nextPipelines); setPipelineId(nextPipelines[0]?.id || ''); setClients(nextClients); setContacts(nextContacts); setMembers(nextMembers); setItems(nextItems); setLoading(false);
+        if (initialDealId && !initialOpened.current) {
+          initialOpened.current = true;
+          const target = nextItems.find(row => row.id === initialDealId);
+          if (target) {setSelectedId(target.id); setPipelineId(target.pipeline_id);}
+          else setError('Сделка из уведомления больше недоступна');
+        }
       } catch(e) {if (!controller.signal.aborted) {setError(errorText(e)); setLoading(false);}}
     };
     void load();
@@ -349,37 +370,50 @@ export default function CRM() {
     (followFilter === 'today' && isToday(d)) || (followFilter === 'overdue' && isOverdue(d)) ||
     (followFilter === 'none' && !d.follow_up_at)) &&
     `${d.title} ${clients.find(c => c.id === d.client_id)?.name || ''} ${contacts.find(c => c.id === d.contact_id) ? contactName(contacts.find(c => c.id === d.contact_id)!) : d.contact_name || ''}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
-  return <>
-    <header><div><h1>CRM · Сделки</h1><p>Управление продажами и следующими контактами</p></div><button className="primary" disabled={loading || busy || !pipeline?.stages.length} onClick={() => {setFormError(''); setEditing('new');}}><Plus size={18}/>Новая сделка</button></header>
-    <div className="crmTools">
-      <select aria-label="Рабочее пространство" disabled={loading || busy} value={workspaceId} onChange={e => setWorkspaceId(e.target.value)}>{workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
-      <select aria-label="Воронка" disabled={loading || busy} value={pipelineId} onChange={e => setPipelineId(e.target.value)}>{pipelines.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-      <button type="button" className="filter" disabled={loading} onClick={() => setClientDirectory('list')}>Компании</button>
-      <button type="button" className="filter" disabled={loading} onClick={() => setContactDirectory({})}>Контакты</button>
-      <button type="button" className="filter" disabled={loading} aria-pressed={myDayOpen} onClick={() => setMyDayOpen(!myDayOpen)}>Мой день</button>
-      {canManageStages && <button type="button" className="filter" onClick={() => setPipelineSettings(true)}>Управление воронками</button>}
-      {canManageStages && pipeline && <button type="button" className="filter" onClick={() => setStageSettings(true)}>Настроить стадии</button>}
-      <div className="search"><Search size={17}/><input aria-label="Поиск сделок" placeholder="Поиск по сделкам и клиентам" value={search} onChange={e => setSearch(e.target.value)}/></div>
+  return <div className="crmDashboard">
+    <WorkspaceTopbar userName={userName} onNavigate={onNavigate}/>
+    <header className="crmPageHeading"><div><span className="crmEyebrow">ПРОДАЖИ И ОТНОШЕНИЯ</span><h1>CRM · Сделки</h1><p>От первого обращения до нового проекта.</p></div>
+      <div className="crmHeaderActions"><select aria-label="Рабочее пространство" disabled={loading || busy} value={workspaceId} onChange={e => setWorkspaceId(e.target.value)}>{workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
+        <button className="primary" disabled={loading || busy || !pipeline?.stages.length} onClick={() => {setFormError(''); setEditing('new');}}><Plus size={16}/>Новая сделка</button></div>
+    </header>
+    <div className="crmSectionNav" role="group" aria-label="Разделы CRM"><span className="crmCurrentTab"><Columns3 size={15}/>Сделки{!loading && <b>{pipelineItems.length}</b>}</span>
+      <button type="button" disabled={loading} onClick={() => setClientDirectory('list')}><Building2 size={15}/>Компании</button>
+      <button type="button" disabled={loading} onClick={() => setContactDirectory({})}><UsersRound size={15}/>Контакты</button>
+      <button type="button" disabled={loading} aria-pressed={myDayOpen} onClick={() => setMyDayOpen(!myDayOpen)}><CalendarClock size={15}/>Мой день</button>
+    </div>
+    <div className="crmTools crmFilterBar">
+      <div className="crmPipelineSelect"><Columns3 size={15}/><select aria-label="Воронка" disabled={loading || busy} value={pipelineId} onChange={e => setPipelineId(e.target.value)}>{pipelines.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+      <div className="search"><Search size={16}/><input aria-label="Поиск сделок" placeholder="Поиск сделки, компании или контакта" value={search} onChange={e => setSearch(e.target.value)}/></div>
+    </div>
+    <div className="crmFollowFilters" role="group" aria-label="Фильтры следующих контактов"><button className="filter" aria-pressed={followFilter === 'all'} onClick={() => setFollowFilter('all')}>Все сделки <b>{pipelineItems.length}</b></button>
       <button className="filter" aria-pressed={followFilter === 'today'} onClick={() => setFollowFilter(followFilter === 'today' ? 'all' : 'today')}><CalendarClock size={17}/>Follow-up сегодня <b>{pipelineItems.filter(isToday).length}</b></button>
       <button className="filter" aria-pressed={followFilter === 'overdue'} onClick={() => setFollowFilter(followFilter === 'overdue' ? 'all' : 'overdue')}>Просрочены <b>{pipelineItems.filter(isOverdue).length}</b></button>
       <button className="filter" aria-pressed={followFilter === 'none'} onClick={() => setFollowFilter(followFilter === 'none' ? 'all' : 'none')}>Нет дел <b>{pipelineItems.filter(d => !d.follow_up_at).length}</b></button>
+    </div>
+    <div className="crmBoardToolbar"><div className="crmBoardCaption"><span className="crmBoardView"><Columns3 size={14}/>Канбан</span><span>{!loading ? `Показано ${filtered.length} из ${pipelineItems.length}` : 'Загрузка…'}</span></div>
+      <div className="crmBoardSettings">{canManageStages && <button type="button" className="filter" disabled={loading || busy} onClick={() => setPipelineSettings(true)}><Settings2 size={13}/>Управление воронками</button>}
+        {canManageStages && pipeline && <button type="button" className="filter" disabled={busy} onClick={() => setStageSettings(true)}>Настроить стадии</button>}
+        {canManageStages && pipeline && <CsvExport base={base} entity="deals" pipelineId={pipelineId}/>}</div>
     </div>
     {error && <div role="alert" className="errorMessage">{error} <button disabled={busy || loading} onClick={() => setReload(n => n + 1)}>Повторить загрузку</button></div>}
     {myDayOpen && workspaceId && !loading && <MyDay base={base} onOpenDeal={id => setSelectedId(id)}/>}
     {loading ? <p role="status">Загрузка CRM…</p> : !pipeline ? <p>Нет доступных воронок. Откройте «Настройки», чтобы создать студию, или попросите владельца добавить вас.</p> : <>
       {busy && <p role="status">Сохранение…</p>}
       {!filtered.length && <p className="muted">{items.length ? 'Нет сделок по выбранным условиям.' : 'Пока нет сделок. Создайте первую сделку.'}</p>}
-      <div className="kanban" style={{gridTemplateColumns: `repeat(${pipeline.stages.length || 1}, minmax(230px, 1fr))`}}>
-        {pipeline.stages.map(stage => {const list = filtered.filter(d => d.stage_id === stage.id); return <section className="kanbanCol" key={stage.id} onDragOver={e => e.preventDefault()} onDrop={e => {e.preventDefault(); void move(e.dataTransfer.getData('dealId'), stage.id);}}>
-          <div className="colHead"><div><span className="dot"/><b>{stage.name}</b><em>{list.length}</em></div><strong>{money(list.reduce((sum, d) => sum + Math.round(Number(d.amount) * 100), 0) / 100, workspaces.find(w => w.id === workspaceId)?.currency || 'RUB')}</strong></div>
-          <div className="dealList">{list.map(d => <article className="deal card" key={d.id} draggable={!busy} tabIndex={0} aria-label={`Открыть ${d.title}`} onKeyDown={e => {if (e.key === 'Enter') setSelectedId(d.id);}} onDragStart={e => e.dataTransfer.setData('dealId', d.id)} onClick={() => setSelectedId(d.id)}>
-            <div className="dealTop"><small>{d.source || 'Без источника'}</small></div><h3>{d.title}</h3><p>{clients.find(c => c.id === d.client_id)?.name} · {contacts.find(c => c.id === d.contact_id) ? contactName(contacts.find(c => c.id === d.contact_id)!) : d.contact_name || 'Без контакта'}</p><p>Ответственный: {members.find(m => m.user_id === d.responsible_user_id)?.first_name || 'Не назначен'}</p><strong>{money(d.amount, d.currency)}</strong>
+      <div className="kanban" aria-label="Доска сделок" style={{gridTemplateColumns: `repeat(${pipeline.stages.length || 1}, minmax(250px, 1fr))`}}>
+        {pipeline.stages.map(stage => {const list = filtered.filter(d => d.stage_id === stage.id); const color = stage.color || (stage.stage_type === 'WON' ? '#6b9e84' : stage.stage_type === 'LOST' ? '#aaaab4' : '#e31e24'); return <section className="kanbanCol" aria-label={`Стадия ${stage.name}`} key={stage.id} style={{borderTopColor: color}} data-drag-over={dragStage === stage.id} onDragOver={e => {e.preventDefault(); setDragStage(stage.id);}} onDragLeave={e => {if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragStage(null);}} onDrop={e => {e.preventDefault(); setDragStage(null); void move(e.dataTransfer.getData('dealId'), stage.id);}}>
+          <div className="colHead"><div><span className="dot" style={{background: color}}/><b>{stage.name}</b><em>{list.length}</em></div><strong>{money(list.reduce((sum, d) => sum + Math.round(Number(d.amount) * 100), 0) / 100, workspaces.find(w => w.id === workspaceId)?.currency || 'RUB')}</strong></div>
+          <div className="dealList">{list.map(d => <article className="deal card" key={d.id} draggable={!busy} tabIndex={0} aria-label={`Открыть ${d.title}`} onKeyDown={e => {if (e.key === 'Enter') setSelectedId(d.id);}} onDragStart={e => e.dataTransfer.setData('dealId', d.id)} onDragEnd={() => setDragStage(null)} onClick={() => setSelectedId(d.id)}>
+            <div className="dealTop"><small>{d.source || 'Без источника'}</small></div><h3>{d.title}</h3>
+            <p className="crmCardCompany">{clients.find(c => c.id === d.client_id)?.name || 'Компания не указана'}</p><p className="crmCardContact">{contacts.find(c => c.id === d.contact_id) ? contactName(contacts.find(c => c.id === d.contact_id)!) : d.contact_name || 'Без контакта'}</p>
+            <div className="crmCardValue"><strong>{money(d.amount, d.currency)}</strong><span className="crmAssigneeAvatar" title={`Ответственный: ${members.find(m => m.user_id === d.responsible_user_id)?.first_name || 'Не назначен'}`} aria-label={`Ответственный: ${members.find(m => m.user_id === d.responsible_user_id)?.first_name || 'Не назначен'}`}>{members.find(m => m.user_id === d.responsible_user_id)?.first_name.slice(0, 1).toUpperCase() || '—'}</span></div>
             <div className={`follow ${d.follow_up_at && new Date(d.follow_up_at).getTime() < Date.now() ? 'late' : ''}`}><CalendarClock size={14}/><span>{d.follow_up_at ? new Date(d.follow_up_at).toLocaleString('ru-RU') : 'Не назначен'}</span></div>
           </article>)}</div><button className="addDeal" disabled={busy} onClick={() => {setFormError(''); setEditing('new');}}><Plus size={15}/>Добавить сделку</button>
         </section>;})}
       </div>
     </>}
-    {selected && <DealDrawer key={selected.id} base={base} members={members} canDelete={['OWNER', 'ADMIN'].includes(workspaces.find(w => w.id === workspaceId)?.role || '')} deal={selected} client={clients.find(c => c.id === selected.client_id)} contact={contacts.find(c => c.id === selected.contact_id)} stage={pipelines.flatMap(p => p.stages).find(s => s.id === selected.stage_id)?.name} responsibleName={members.find(m => m.user_id === selected.responsible_user_id)?.first_name} busy={busy}
+    {selected && <DealDrawer key={selected.id} base={base} members={members} contacts={contacts} canDelete={['OWNER', 'ADMIN'].includes(workspaces.find(w => w.id === workspaceId)?.role || '')} deal={selected} client={clients.find(c => c.id === selected.client_id)} contact={contacts.find(c => c.id === selected.contact_id)} stage={pipelines.flatMap(p => p.stages).find(s => s.id === selected.stage_id)?.name} responsibleName={members.find(m => m.user_id === selected.responsible_user_id)?.first_name} busy={busy}
+      onDealChange={replace}
       onClose={() => setSelectedId(null)} onEdit={() => {setFormError(''); setEditing(selected);}}
       onOpenClient={() => {setSelectedId(null); setClientDirectory(selected.client_id);}}
       onOpenContact={() => {setSelectedId(null); setContactDirectory({initialId: selected.contact_id || undefined});}}
@@ -391,5 +425,5 @@ export default function CRM() {
     {pipelineSettings && <PipelineSettings base={base} onClose={() => setPipelineSettings(false)} onChanged={refreshPipelines}/>}
     {clientDirectory && <ClientDirectory clients={clients} contacts={contacts} base={base} initialId={clientDirectory === 'list' ? undefined : clientDirectory} canDelete={canManageStages} onClose={() => setClientDirectory(null)} onChanged={refreshClients} onOpenDeal={id => {setClientDirectory(null); setSelectedId(id);}} onOpenContact={(id, clientId) => {setClientDirectory(null); setContactDirectory({initialId: id, initialClientId: clientId});}}/>}
     {contactDirectory && <ContactDirectory contacts={contacts} clients={clients} base={base} canDelete={canManageStages} initialId={contactDirectory.initialId} initialClientId={contactDirectory.initialClientId} onClose={() => setContactDirectory(null)} onChanged={refreshContacts} onOpenDeal={id => {setContactDirectory(null); setSelectedId(id);}}/>}
-  </>;
+  </div>;
 }

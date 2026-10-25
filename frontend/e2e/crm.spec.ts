@@ -13,6 +13,7 @@ test('registration through follow-up survives reload', async ({page}) => {
   await page.getByRole('button', {name: 'Настройки'}).click();
   await page.getByLabel('Название новой студии').fill(`E2E studio ${stamp}`);
   await page.getByRole('button', {name: 'Создать студию'}).click();
+  await expect(page.getByLabel('Название студии', {exact: true})).toHaveValue(`E2E studio ${stamp}`);
   await page.getByRole('button', {name: 'CRM', exact: true}).click();
   await page.getByRole('button', {name: 'Управление воронками'}).click();
   const pipelineSettings = page.getByRole('dialog', {name: 'Управление воронками'});
@@ -41,7 +42,7 @@ test('registration through follow-up survives reload', async ({page}) => {
   await form.getByRole('button', {name: 'Сохранить сделку'}).click();
   const card = page.getByRole('article', {name: `Открыть ${deal}`});
   await expect(card).toBeVisible();
-  await expect(card).toContainText('Ответственный: E2E');
+  await expect(card.getByLabel('Ответственный: E2E', {exact: true})).toBeVisible();
   await card.click();
   const dealDrawer = page.getByRole('dialog', {name: 'Карточка сделки'});
   await dealDrawer.getByLabel('Название задачи').fill(`E2E задача ${stamp}`);
@@ -73,7 +74,9 @@ test('registration through follow-up survives reload', async ({page}) => {
   await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: 'Иванова Мария'})).toBeVisible();
   await page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: 'Закрыть'}).click();
   const stage = page.locator('.kanbanCol').nth(1);
-  await card.dragTo(stage);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  // Aim at the visible column header, not the center of a tall scrollable column.
+  await card.dragTo(stage.locator('.colHead'));
   await expect(stage.getByRole('article', {name: `Открыть ${deal}`})).toBeVisible();
   await card.click();
   const drawer = page.getByRole('dialog', {name: 'Карточка сделки'});
@@ -115,4 +118,11 @@ test('registration through follow-up survives reload', async ({page}) => {
   await page.getByRole('article', {name: `Открыть ${deal}`}).click();
   await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByText('E2E контакт завершён')).toBeVisible();
   await expect(page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: 'Отметить follow-up выполненным'})).toHaveCount(0);
+  await page.getByRole('dialog', {name: 'Карточка сделки'}).getByRole('button', {name: 'Закрыть'}).click();
+  await page.getByRole('button', {name: 'Клиенты', exact: true}).click();
+  await page.getByRole('button', {name: `E2E client ${stamp}`, exact: true}).click();
+  const standaloneCompany = page.getByRole('dialog', {name: 'Компании'});
+  await expect(standaloneCompany.getByLabel('Рабочий телефон')).toHaveValue('+7 900 000-00-00');
+  await standaloneCompany.getByRole('button', {name: deal, exact: true}).click();
+  await expect(page.getByRole('dialog', {name: 'Карточка сделки'})).toContainText(deal);
 });

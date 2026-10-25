@@ -1,0 +1,17 @@
+.taskTable{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e7eaf0;border-radius:13px;overflow:hidden}
+.taskTable th,.taskTable td{text-align:left;padding:10px 12px;border-bottom:1px solid #f2f4f7;font-size:13px}
+.taskTable thead th{background:#f8fafc;color:#667085;font-weight:600;font-size:12px}
+.taskTable tbody tr{cursor:pointer}
+.taskTable tbody tr:hover{background:#f9fafb}
+.linkLike{border:0;background:none;color:#4f46e5;cursor:pointer;padding:0;font:inherit;text-align:left}
+.projectTabs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 4px}
+.projectTabs button{border:1px solid #e1e5ec;background:#fff;color:#475467;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px}
+.projectTabs button.active{background:#eef2ff;border-color:#c7d2fe;color:#4338ca}
+.inlineForm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.inlineForm input,.inlineForm select{flex:1;min-width:140px;border:1px solid #dfe3e9;border-radius:8px;padding:8px;font:inherit;font-size:13px}
+.inlineForm button{border:0;background:#eef2ff;color:#4f46e5;border-radius:8px;padding:8px 11px;cursor:pointer;font-size:12px}
+.inlineForm button:disabled{opacity:.55;cursor:not-allowed}
+.plainList{list-style:none;padding:0;margin:6px 0}
+.plainList li{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid #f2f4f7;font-size:13px}
+.plainList li:last-child{border-bottom:0}
+.plainList button{border:0;background:#eef2ff;color:#4f46e5;border-radius:8px;padding:6px 9px;cursor:pointer;font-size:12px}

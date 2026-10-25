@@ -18,8 +18,8 @@ export default function Auth({onLogin}: {onLogin: (user: User) => void}) {
       onLogin(user);
     } catch (e) {setError(errorText(e));} finally {setBusy(false);}
   }
-  return <div className="authPage"><section className="card authCard">
-    <div className="brand"><div className="brandMark">S</div><div><b>StudioFlow</b><span>Web Studio OS</span></div></div>
+  return <div className="authPage itgAuth"><aside className="authIntro" aria-label="StudioFlow для IT GROUP"><span className="authEyebrow">STUDIOFLOW / IT GROUP</span><h2>Одна команда.<br/>Единая система.</h2><p>Продажи, проекты и ежедневная работа — в одном пространстве.</p><div className="authIntroArt" aria-hidden="true">↗</div><span className="authIntroFooter">СИСТЕМА ДЛЯ РОСТА</span></aside><section className="card authCard">
+    <div className="brand"><div className="brandMark">IT</div><div><b>IT GROUP</b><span>StudioFlow · рабочая среда</span></div></div>
     <h1>{register ? 'Создать аккаунт' : 'Войти в StudioFlow'}</h1>
     <p className="muted">Продажи и работа вашей студии в одном месте.</p>
     <form onSubmit={submit}><fieldset disabled={busy}>

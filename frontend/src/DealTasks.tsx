@@ -1,6 +1,5 @@
 import {useEffect, useState, type FormEvent} from 'react';
 import {type DealTask, type Member, errorText, localDateTime, request} from './api';
-import './DealTasks.css';
 import TaskReminders from './TaskReminders';
 
 type Draft = {title: string; description: string; priority: DealTask['priority']; assignee_user_id: string;

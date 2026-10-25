@@ -12,6 +12,122 @@ from app.models.entities import StageType
 pytestmark = pytest.mark.asyncio
 
 
+async def test_deal_tags_are_case_insensitive_workspace_scoped_and_reusable(crm):
+    http, base = crm["http"], crm["base"]
+    deal = (await http.post(base + "/deals", json=crm["payload"])).json()
+    path = base + "/deals/" + deal["id"] + "/tags"
+    created = await http.post(path, json={"name": "  важное  "})
+    assert created.status_code == 201, created.text
+    assert created.json()["name"] == "важное"
+    again = await http.post(path, json={"name": "ВАЖНОЕ"})
+    assert again.status_code == 201, again.text
+    assert again.json()["id"] == created.json()["id"]
+    assert [item["id"] for item in (await http.get(path)).json()] == [created.json()["id"]]
+    assert [item["id"] for item in (await http.get(base + "/tags")).json()] == [created.json()["id"]]
+    assert (await http.post(path, json={"name": "  "})).status_code == 422
+    other = f'/api/v1/workspaces/{crm["spaces"][1].id}/deals/{deal["id"]}/tags'
+    assert (await http.get(other)).status_code == 404
+    assert (await http.post(other, json={"name": "чужая"})).status_code == 404
+    assert (await http.delete(path + "/" + created.json()["id"])).status_code == 204
+    assert (await http.get(path)).json() == []
+    assert len((await http.get(base + "/tags")).json()) == 1
+    assert (await http.delete(path + "/" + created.json()["id"])).status_code == 404
+    assert (await http.get(base + "/deals/" + deal["id"])).status_code == 200
+
+
+async def test_deal_watchers_require_active_membership(crm):
+    http, base = crm["http"], crm["base"]
+    deal = (await http.post(base + "/deals", json=crm["payload"])).json()
+    path = base + "/deals/" + deal["id"] + "/watchers"
+    assert (await http.post(path, json={"user_id": str(uuid4())})).status_code == 422
+    created = await http.post(path, json={"user_id": str(crm["user"].id)})
+    assert created.status_code == 201, created.text
+    assert created.json()["user_id"] == str(crm["user"].id) and created.json()["email"] == crm["user"].email
+    assert (await http.post(path, json={"user_id": str(crm["user"].id)})).status_code == 409
+    assert [item["user_id"] for item in (await http.get(path)).json()] == [str(crm["user"].id)]
+    other = f'/api/v1/workspaces/{crm["spaces"][1].id}/deals/{deal["id"]}/watchers'
+    assert (await http.get(other)).status_code == 404
+    assert (await http.delete(path + "/" + str(crm["user"].id))).status_code == 204
+    assert (await http.get(path)).json() == []
+    assert (await http.delete(path + "/" + str(crm["user"].id))).status_code == 404
+
+
+async def test_deal_linked_contacts_keep_exactly_one_primary(crm):
+    http, base = crm["http"], crm["base"]
+    deal = (await http.post(base + "/deals", json=crm["payload"])).json()
+    first = (await http.post(base + "/contacts", json={"first_name": "Анна", "client_ids": [str(crm["clients"][0].id)]})).json()
+    second = (await http.post(base + "/contacts", json={"first_name": "Борис"})).json()
+    path = base + "/deals/" + deal["id"] + "/contacts"
+    assert (await http.post(path, json={"contact_id": first["id"], "is_primary": True})).status_code == 201
+    created = await http.post(path, json={"contact_id": second["id"]})
+    assert created.status_code == 201 and created.json()["is_primary"] is False
+    assert (await http.post(path, json={"contact_id": first["id"]})).status_code == 409
+    links = (await http.get(path)).json()
+    assert [item["is_primary"] for item in links] == [True, False]
+    switched = await http.patch(path + "/" + second["id"], json={"is_primary": True})
+    assert switched.status_code == 200 and switched.json()["is_primary"] is True
+    links = (await http.get(path)).json()
+    assert [(item["contact_id"], item["is_primary"]) for item in links] == [(second["id"], True), (first["id"], False)]
+    assert (await http.delete(path + "/" + second["id"])).status_code == 204
+    links = (await http.get(path)).json()
+    assert [(item["contact_id"], item["is_primary"]) for item in links] == [(first["id"], True)]
+    other_deal = f'/api/v1/workspaces/{crm["spaces"][1].id}/deals/{deal["id"]}/contacts'
+    assert (await http.get(other_deal)).status_code == 404
+    assert (await http.delete(base + "/deals/" + deal["id"])).status_code == 204
+    assert (await http.get(base + "/contacts/" + first["id"])).status_code == 200
+
+
+async def test_deal_attachments_and_custom_fields_validate_and_persist(crm):
+    http, base = crm["http"], crm["base"]
+    deal = (await http.post(base + "/deals", json=crm["payload"])).json()
+    attachments = base + "/deals/" + deal["id"] + "/attachments"
+    created = await http.post(attachments, json={"filename": "  brief.pdf ", "content_type": "application/pdf", "size_bytes": 2048})
+    assert created.status_code == 201, created.text
+    assert created.json()["filename"] == "brief.pdf" and created.json()["uploaded_by_name"] == "Tester"
+    assert (await http.post(attachments, json={"filename": "x", "size_bytes": -1})).status_code == 422
+    assert [item["filename"] for item in (await http.get(attachments)).json()] == ["brief.pdf"]
+    assert (await http.delete(attachments + "/" + created.json()["id"])).status_code == 204
+    assert (await http.get(attachments)).json() == []
+
+    fields = base + "/deals/" + deal["id"] + "/custom-fields"
+    payload = {"values": [
+        {"key": "Тип услуги", "type": "TEXT", "value": "Разработка"},
+        {"key": "Бюджет", "type": "NUMBER", "value": "120000.50"},
+        {"key": "Дедлайн", "type": "DATE", "value": "2026-11-30"},
+    ]}
+    saved = await http.put(fields, json=payload)
+    assert saved.status_code == 200, saved.text
+    assert [(item["key"], item["type"], item["value"]) for item in saved.json()["values"]] == [
+        ("Бюджет", "NUMBER", "120000.5"), ("Дедлайн", "DATE", "2026-11-30"), ("Тип услуги", "TEXT", "Разработка")]
+    assert (await http.get(fields)).json() == saved.json()
+    assert (await http.put(fields, json={"values": [{"key": "Бюджет", "type": "NUMBER", "value": "много"}]})).status_code == 422
+    assert (await http.put(fields, json={"values": [{"key": "Дедлайн", "type": "DATE", "value": "2026-13-01"}]})).status_code == 422
+    assert (await http.put(fields, json={"values": [{"key": "Ключ", "type": "TEXT"}, {"key": "ключ", "type": "TEXT"}]})).status_code == 422
+    assert (await http.put(fields, json={"values": []})).json() == {"values": []}
+    other = f'/api/v1/workspaces/{crm["spaces"][1].id}/deals/{deal["id"]}/custom-fields'
+    assert (await http.get(other)).status_code == 404
+
+
+async def test_deal_utm_and_activity_kinds_persist(crm):
+    http, base = crm["http"], crm["base"]
+    deal = (await http.post(base + "/deals", json=crm["payload"])).json()
+    path = base + "/deals/" + deal["id"]
+    assert deal["utm_source"] is None
+    updated = await http.patch(path, json={"utm_source": "yandex", "utm_campaign": "осень",
+                                           "http_referrer": "https://example.com/pricing"})
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["utm_source"] == "yandex" and updated.json()["utm_campaign"] == "осень"
+    assert (await http.get(path)).json()["http_referrer"] == "https://example.com/pricing"
+    activities = path + "/activities"
+    for kind in ("EVENT", "MENTION", "NOTE"):
+        created = await http.post(activities, json={"body": f"Запись {kind}", "kind": kind,
+            **({"recipient_user_id": str(crm["user"].id)} if kind == "MENTION" else {})})
+        assert created.status_code == 201, created.text
+        assert created.json()["kind"] == kind
+    assert (await http.post(activities, json={"body": "Недопустимо", "kind": "BOGUS"})).status_code == 422
+    assert {item["kind"] for item in (await http.get(activities)).json()} == {"EVENT", "MENTION", "NOTE"}
+
+
 async def test_my_day_shows_only_active_assigned_work(crm):
     http, base = crm["http"], crm["base"]
     assigned = (await http.post(base + "/deals", json={**crm["payload"],

@@ -1,0 +1,17 @@
+.financeActions{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+.financeActions input{min-width:180px}
+.financeTable{width:100%;border-collapse:collapse;background:white;margin-top:18px}
+.financeTable th,.financeTable td,.invoicePrint td,.invoicePrint th{padding:12px;text-align:left;border-bottom:1px solid #e7eaf0}
+.financeTable th{background:#f8fafc}
+.invoicePrint{padding:18px;border:1px solid #e7eaf0;margin:16px 0;overflow-wrap:anywhere}
+.invoicePrint table{width:100%;border-collapse:collapse}
+.invoicePrint td:first-child{white-space:pre-wrap}
+.financeDrawer{width:min(820px,95vw)}
+.financeDrawer fieldset{display:grid;gap:10px}
+@media print{
+  body *{visibility:hidden!important}
+  .invoicePrint,.invoicePrint *{visibility:visible!important}
+  .invoicePrint{position:absolute;left:0;top:0;width:100%;border:0;background:white;color:black;margin:0}
+  .shell,.shell main,.drawerBackdrop,.financeDrawer{display:block!important;position:static!important;width:auto!important;height:auto!important;overflow:visible!important;transform:none!important;padding:0!important}
+  .sidebar{display:none!important}
+}

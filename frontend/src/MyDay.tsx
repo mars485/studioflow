@@ -1,6 +1,5 @@
 import {useEffect, useState} from 'react';
 import {type DueTaskReminder, type MyDay as MyDayData, errorText, request} from './api';
-import './MyDay.css';
 
 const empty: MyDayData = {tasks: [], follow_ups: []};
 

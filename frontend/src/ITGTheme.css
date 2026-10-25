@@ -1,0 +1,527 @@
+/* Imported into the `theme` layer by app.css. Keep selectors low-specificity:
+   base roles → components → states → responsive overrides. */
+@font-face {
+  font-family: 'Golos Text';
+  src: url('/fonts/GolosText-Variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+}
+
+:root { color-scheme: dark; background: #181c1b; }
+
+.itgTheme {
+  --itg-canvas: #181c1b;
+  --itg-sidebar: #141816;
+  --itg-surface: #202624;
+  --itg-elevated: #28312d;
+  --itg-text: #eef3ef;
+  --itg-secondary: #a8b5ac;
+  --itg-border: #39473f;
+  --itg-control-border: #65776b;
+  --itg-accent: #79d99a;
+  --itg-accent-hover: #93e4af;
+  --itg-accent-soft: #243c2d;
+  --itg-on-accent: #14251a;
+  --itg-danger: #ffaca6;
+  --itg-danger-soft: #3b2525;
+  --itg-warning: #edc58c;
+  --itg-warning-soft: #3a3022;
+  --itg-gutter: clamp(16px, 2.4vw, 40px);
+  --itg-duration: 120ms;
+  --itg-ease: cubic-bezier(.2,.8,.2,1);
+  font: 14px/1.55 'Golos Text', 'Segoe UI', sans-serif;
+  color: var(--itg-text);
+  background: var(--itg-canvas);
+  min-height: 100vh;
+  accent-color: var(--itg-accent);
+}
+
+.itgTheme :where(.homeShell,.homeDashboard,.crmDashboard,.portalModule,.itgAuth,.drawer,.dealModal) {
+  --itg-red: var(--itg-accent);
+  --itg-ink: var(--itg-text);
+  --itg-muted: var(--itg-secondary);
+  --itg-line: var(--itg-border);
+  --portal-accent: var(--itg-accent);
+  --portal-ink: var(--itg-text);
+  --portal-line: var(--itg-border);
+  font-family: inherit;
+  color: var(--itg-text);
+}
+
+/* Base typography and controls. Exceptions are explicit component roles,
+   never button:not([class]) or a button's position among its siblings. */
+.itgTheme :where(h1,h2,h3,h4,strong,b) { color: inherit; }
+.itgTheme :where(h1,h2,h3,h4) { overflow-wrap: anywhere; }
+.itgTheme :where(h1) { font-size: 30px; font-weight: 600; letter-spacing: -.8px; line-height: 1.2; }
+.itgTheme :where(label,small,.muted,header p) { color: var(--itg-secondary); }
+.itgTheme :where(.muted,header p) { font-size: 13px; line-height: 1.6; }
+.itgTheme :where(a) { color: var(--itg-accent); text-underline-offset: 3px; }
+.itgTheme :where(a:hover) { color: var(--itg-accent-hover); }
+.itgTheme :where(button,input,select,textarea) { font-family: inherit; font-size: 13px; line-height: 1.4; }
+.itgTheme :where(button) {
+  min-height: 40px;
+  max-width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--itg-control-border);
+  border-radius: 8px;
+  background: var(--itg-surface);
+  color: var(--itg-text);
+  cursor: pointer;
+  transition: background-color var(--itg-duration) var(--itg-ease), border-color var(--itg-duration) var(--itg-ease), color var(--itg-duration) var(--itg-ease);
+}
+.itgTheme :where(button:hover:not(:disabled)) {
+  background: var(--itg-elevated);
+  border-color: var(--itg-accent);
+  color: var(--itg-text);
+}
+.itgTheme :where(button:disabled) { opacity: .5; cursor: not-allowed; }
+.itgTheme :where(input:not([type=checkbox]):not([type=radio]),select,textarea) {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  background: var(--itg-canvas);
+  color: var(--itg-text);
+  border: 1px solid var(--itg-control-border);
+  border-radius: 8px;
+}
+.itgTheme :where(textarea) { min-height: 88px; resize: vertical; }
+.itgTheme :where(input,textarea)::placeholder { color: var(--itg-secondary); opacity: 1; }
+.itgTheme :where(input[type=checkbox],input[type=radio]) {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--itg-accent);
+  flex: 0 0 auto;
+}
+.itgTheme :where(input[type=color]) { min-height: 40px; padding: 4px; }
+.itgTheme :where(input[type=file]) { width: 100%; padding: 6px; }
+.itgTheme :where(input[type=file])::file-selector-button {
+  padding: 6px 10px;
+  margin-right: 10px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--itg-elevated);
+  color: var(--itg-text);
+  font: inherit;
+}
+.itgTheme :where(button,a,input,select,textarea,summary,[tabindex]):focus-visible {
+  outline: 2px solid var(--itg-accent);
+  outline-offset: 3px;
+}
+.itgTheme ::selection { color: var(--itg-on-accent); background: var(--itg-accent); }
+
+/* Progressive enhancement retains the native select's value, keyboard and
+   form semantics, but lets Chromium render the popup instead of Windows. */
+@supports (appearance: base-select) {
+  .itgTheme :where(select:not([multiple]):not([size])) {
+    appearance: base-select;
+    align-items: center;
+    column-gap: 12px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .itgTheme :where(select:not([multiple]):not([size]))::picker(select) {
+    appearance: base-select;
+    margin-block: 6px;
+    padding: 4px;
+    max-height: min(320px, 60dvh);
+    overflow: auto;
+    background: var(--itg-surface);
+    color: var(--itg-text);
+    border: 1px solid var(--itg-control-border);
+    border-radius: 10px;
+    box-shadow: 0 12px 32px #0005;
+    font: inherit;
+    scrollbar-width: thin;
+  }
+  .itgTheme :where(select:not([multiple]):not([size]))::picker-icon { flex-shrink: 0; color: var(--itg-secondary); margin-left: auto; }
+  .itgTheme :where(select:not([multiple]):not([size]) option) {
+    min-height: 40px;
+    padding: 10px 12px;
+    gap: 12px;
+    background: var(--itg-surface);
+    color: var(--itg-text);
+    border: 0;
+    border-radius: 6px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .itgTheme :where(select:not([multiple]):not([size]) option:is(:checked,:hover,:focus)) { background: var(--itg-accent-soft); color: var(--itg-accent); }
+  .itgTheme :where(select:not([multiple]):not([size]) option)::checkmark { color: var(--itg-accent); }
+}
+
+/* Primary and selected states come after neutral hover, so hover cannot turn
+   dark-on-green actions into light-on-green or deselect an active filter. */
+.itgTheme :where(.primary,.saveFollow,.activitySection form>button,.completionSection>button,.stageSettings form>button,.pipelineSettings form>button,.dealTasks form button:not([type=button])) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: auto;
+  min-height: 40px;
+  background: var(--itg-accent);
+  border-color: var(--itg-accent);
+  color: var(--itg-on-accent);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: none;
+}
+.itgTheme :where(.primary,.saveFollow,.activitySection form>button,.completionSection>button,.stageSettings form>button,.pipelineSettings form>button,.dealTasks form button:not([type=button])):hover:not(:disabled) {
+  background: var(--itg-accent-hover);
+  border-color: var(--itg-accent-hover);
+  color: var(--itg-on-accent);
+}
+.itgTheme :where(.filter[aria-pressed=true],button[role=tab][aria-selected=true],.projectTabs button.active,.clientListButton[aria-current=true]) {
+  background: var(--itg-accent-soft);
+  border-color: var(--itg-accent);
+  color: var(--itg-accent);
+}
+.itgTheme :where(.filter[aria-pressed=true],button[role=tab][aria-selected=true],.projectTabs button.active,.clientListButton[aria-current=true]):hover:not(:disabled) {
+  background: var(--itg-accent-soft);
+  border-color: var(--itg-accent-hover);
+  color: var(--itg-accent-hover);
+}
+.itgTheme :where(.filter b,.crmCurrentTab b,.homeCount,.dealTop small,.tagList li) { background: var(--itg-elevated); color: var(--itg-secondary); }
+.itgTheme :where(.errorMessage,[role=alert]) {
+  padding: 12px 14px;
+  background: var(--itg-danger-soft);
+  color: var(--itg-danger);
+  border: 1px solid #88544f;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.itgTheme :where(.clientDuplicate,.myDayOverdue,.homeFocusCount.hasItems,.homeFocusIcon) { background: var(--itg-warning-soft); color: var(--itg-warning); }
+
+/* Shared shell. One gutter drives the main inset and full-width topbar at
+   every breakpoint; legacy negative margins must not leak at 1600px+. */
+.itgTheme :where(.shell) { grid-template-columns: 232px minmax(0,1fr); background: var(--itg-canvas); }
+.itgTheme :where(.shell>main) { min-width: 0; max-width: 1600px; margin: 0 auto; padding: 0 var(--itg-gutter) 32px; }
+.itgTheme :where(.sidebar) { height: 100vh; height: 100dvh; padding: 28px 16px 16px; background: var(--itg-sidebar); border-color: var(--itg-border); }
+.itgTheme :where(.brand) { flex-shrink: 0; gap: 12px; padding: 0 8px 28px; }
+.itgTheme :where(.brandMark) { flex-shrink: 0; background: var(--itg-accent); color: var(--itg-on-accent); border-radius: 8px; box-shadow: none; }
+.itgTheme :where(.brand b) { font-size: 18px; letter-spacing: .5px; }
+.itgTheme :where(.brand span) { color: var(--itg-secondary); font-size: 10px; letter-spacing: 0; }
+.itgTheme :where(.sidebar nav) { display: flex; flex: 1 1 auto; flex-direction: column; gap: 4px; padding: 4px; overflow-y: auto; scrollbar-width: thin; }
+.itgTheme :where(.sidebar nav button) { position: relative; flex-shrink: 0; justify-content: flex-start; min-height: 44px; padding: 11px 12px; border: 0; background: transparent; color: var(--itg-secondary); font-size: 13px; }
+.itgTheme :where(.sidebar nav button:hover:not(:disabled)) { background: var(--itg-surface); color: var(--itg-text); }
+.itgTheme :where(.sidebar nav button.active,.sidebar nav button.active:hover) { background: var(--itg-accent-soft); color: var(--itg-accent); box-shadow: none; }
+.itgTheme :where(.sidebar nav button.active)::before { content: ''; position: absolute; left: 0; top: 13px; bottom: 13px; width: 3px; border-radius: 2px; background: var(--itg-accent); }
+.itgTheme :where(.profile) { flex-shrink: 0; margin-top: 20px; border-color: var(--itg-border); }
+.itgTheme :where(.profile span,.profile button) { color: var(--itg-secondary); }
+.itgTheme :where(.profile button) { min-height: 32px; padding: 4px 0; border: 0; background: transparent; font-size: 12px; }
+.itgTheme :where(.profile button:hover) { background: transparent; color: var(--itg-accent); text-decoration: underline; text-underline-offset: 3px; }
+.itgTheme :where(.avatar,.homeTopbarAvatar,.crmAssigneeAvatar) { background: var(--itg-accent-soft); color: var(--itg-accent); border-color: var(--itg-border); box-shadow: none; }
+.itgTheme :where(.homeTopbar) { height: 76px; min-height: 0; margin: 0 calc(-1 * var(--itg-gutter)) 28px; padding: 0 var(--itg-gutter); background: var(--itg-canvas); border-color: var(--itg-border); }
+.itgTheme :where(.homeSearchButton,.homeTopbarIcon) { background: var(--itg-surface); color: var(--itg-secondary); border: 1px solid var(--itg-border); }
+.itgTheme :where(.homeSearchButton) { min-width: 0; font-size: 13px; }
+.itgTheme :where(.homeSearchButton span) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.itgTheme :where(.homeSearchButton svg,.homeSearchButton kbd) { flex-shrink: 0; }
+.itgTheme :where(.homeSearchButton kbd,.homeToday,.homeToday svg) { color: var(--itg-secondary); border-color: var(--itg-border); font-family: inherit; }
+.itgTheme :where(.homeTopbarRight) { flex-shrink: 0; }
+.itgTheme :where(.homeTopbarIcon) { width: 40px; height: 40px; padding: 0; }
+
+/* Module headings, panels and tables. */
+.itgTheme :where(.card,.panel,.settingsCard,.homeWidget,.homeWorkCard,.homeMetric,.metric,.homeLoading,.homeFilterFields,.portalTableScroll,.calendarScroll,[aria-label="Результаты общего поиска"]) {
+  background: var(--itg-surface);
+  color: var(--itg-text);
+  border-color: var(--itg-border);
+  border-radius: 12px;
+  box-shadow: none;
+}
+.itgTheme :where(.homePageHeading,.crmPageHeading,.portalModule>header,.analyticsDashboard>header) { gap: 20px; margin-bottom: 24px; }
+.itgTheme :where(.homePageHeading h1,.crmPageHeading h1,.portalModule h1) { font-size: 30px; line-height: 1.2; font-weight: 600; letter-spacing: -.8px; margin-bottom: 8px; }
+.itgTheme :where(.homePageHeading p,.crmPageHeading p) { color: var(--itg-secondary); font-size: 13px; line-height: 1.6; }
+.itgTheme :where(.homeEyebrow,.authEyebrow) { font-size: 12px; letter-spacing: 0; color: var(--itg-secondary); }
+.itgTheme :where(.homeWidgetHead>div>.homeEyebrow,.homeQuickStart>.homeEyebrow,.crmEyebrow) { display: none; }
+.itgTheme :where(.portalModule>header>div:first-child,.analyticsDashboard>header>div:first-child)::before { content: none; }
+.itgTheme :where(.portalModule>p.muted,.portalModule>p[role=status],.analyticsDashboard>p[role=status]) { background: var(--itg-surface); border-color: var(--itg-border); color: var(--itg-secondary); }
+.itgTheme :where(.settingsCard) { padding: 24px; }
+.itgTheme :where(.settingsCard h2,.panel h2) { color: var(--itg-text); }
+.itgTheme :where(.settingsCard label,.settingsCard .muted,.memberRow .grow span,.statusFinal,.metric>span,.panel dt,.panel dd) { color: var(--itg-secondary); }
+.itgTheme :where(.settingsCard .inlineForm) { gap: 12px; }
+.itgTheme :where(.crmTools,.financeActions) { gap: 12px; }
+.itgTheme :where(.integrationActions) { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 0 0 20px; }
+.itgTheme :where(.notificationTools) { align-items: center; gap: 16px; }
+.itgTheme :where(.notificationTools>[role=status],.notificationTools .checkboxLabel) { display: inline-flex; align-items: center; min-height: 40px; }
+.itgTheme :where(.notificationTools .checkboxLabel) { gap: 8px; margin: 0; font-size: 13px; line-height: 1.4; cursor: pointer; }
+.itgTheme :where(.portalModule>label,.analyticsDashboard>label) { align-items: center; gap: 12px; }
+.itgTheme :where(.portalModule>label>select,.analyticsDashboard>label select) { max-width: min(100%,360px); }
+.itgTheme :where(.taskTable,.financeTable,.taskCalendar) { background: var(--itg-surface); color: var(--itg-text); border-color: var(--itg-border); }
+.itgTheme :where(.taskTable th,.taskTable td,.financeTable th,.financeTable td,.taskCalendar th,.taskCalendar td) { border-color: var(--itg-border); font-size: 13px; }
+.itgTheme :where(.taskTable th,.financeTable th,.taskCalendar th) { background: var(--itg-sidebar); color: var(--itg-secondary); font-size: 12px; }
+.itgTheme :where(.taskTable tbody tr:hover,.financeTable tbody tr:hover) { background: var(--itg-elevated); }
+.itgTheme :where(.portalTableScroll,.calendarScroll,.kanban,.taskTable,.financeTable) { min-width: 0; max-width: 100%; scrollbar-width: thin; scrollbar-color: var(--itg-control-border) transparent; }
+.itgTheme :where(details) { background: var(--itg-surface); color: var(--itg-text); border-color: var(--itg-border); }
+.itgTheme :where(summary) { color: var(--itg-secondary); }
+.itgTheme :where(pre) { background: var(--itg-sidebar); color: var(--itg-text); }
+.itgTheme :where(.crmSectionNav,.homeTabs,.crmBoardToolbar,.crmTools,.financeActions,.drawerHead,.drawerSection,.dealDetailBlock,.memberRow,.plainList li,.statusList li,.clientDeals,.clientDirectoryBody aside,.settingsCard h2:not(:first-child),.contactCompanies,.workStageList li,.workGanttRow,.panel dt,.panel dd,.dealTaskList li,.dealTasks form,.myDayList li) { border-color: var(--itg-border); }
+
+/* Borderless links and icon controls are not generic secondary buttons. */
+.itgTheme :where(.linkLike,.clientLink,.clientDeals li button,.homeTextButton,.homeQuickStart button,.myDayHead button,.myDayList button,.dealTaskList button) {
+  min-height: 32px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--itg-accent);
+  font-size: 12px;
+  box-shadow: none;
+}
+.itgTheme :where(.linkLike,.clientLink,.clientDeals li button,.homeTextButton,.homeQuickStart button,.myDayHead button,.myDayList button,.dealTaskList button):hover:not(:disabled) { background: transparent; color: var(--itg-accent-hover); text-decoration: underline; text-underline-offset: 3px; }
+.itgTheme :where(.taskTable .linkLike) { color: var(--itg-text); font-weight: 600; }
+.itgTheme :where(.tagChip,.activityKind) { color: var(--itg-accent); }
+.itgTheme :where(.tagList li button) { min-width: 24px; min-height: 24px; padding: 0 4px; border: 0; background: transparent; color: var(--itg-secondary); }
+.itgTheme :where(.primaryBadge) { background: var(--itg-accent-soft); color: var(--itg-accent); }
+
+/* CRM and task boards. Inline user-defined stage colours still take priority. */
+.itgTheme :where(.search,.crmPipelineSelect) { min-height: 40px; background: var(--itg-canvas); color: var(--itg-secondary); border: 1px solid var(--itg-control-border); border-radius: 8px; }
+.itgTheme :where(.search input,.crmPipelineSelect select) { min-height: 0; padding: 0; background: transparent; border: 0; border-radius: 0; outline: none; box-shadow: none; }
+.itgTheme :where(.search input,.crmPipelineSelect select):focus-visible { outline: none; }
+.itgTheme :where(.search:focus-within,.crmPipelineSelect:focus-within) { outline: 2px solid var(--itg-accent); outline-offset: 3px; }
+.itgTheme :where(.crmSectionNav>button,.crmCurrentTab,.homeTabs button) { min-height: 44px; padding: 0 0 12px; background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--itg-secondary); font-size: 13px; }
+.itgTheme :where(.crmSectionNav>button:hover,.homeTabs button:hover) { background: transparent; color: var(--itg-text); border-bottom-color: var(--itg-control-border); }
+.itgTheme :where(.crmCurrentTab,.crmSectionNav>button[aria-pressed=true],.homeTabs button[aria-current=page]) { background: transparent; color: var(--itg-accent); border-bottom-color: var(--itg-accent); }
+.itgTheme :where(.crmBoardView,.crmBoardCaption>span:last-child,.csvExport small) { color: var(--itg-secondary); font-size: 12px; }
+.itgTheme :where(.crmFollowFilters .filter,.crmBoardSettings .filter) { min-height: 36px; height: auto; font-size: 12px; padding: 8px 10px; }
+.itgTheme :where(.crmBoardSettings) { align-items: center; }
+.itgTheme :where(.csvExport) { position: relative; display: inline-flex; align-self: center; gap: 6px; flex-wrap: wrap; max-width: 100%; }
+.itgTheme :where(.csvExport .csvExportHint) {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 280px;
+  max-width: calc(100vw - 100px);
+  padding: 10px 12px;
+  background: var(--itg-elevated);
+  color: var(--itg-secondary);
+  border: 1px solid var(--itg-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px #0004;
+  font-size: 12px;
+  line-height: 1.5;
+  visibility: hidden;
+}
+.itgTheme :where(.csvExport .csvExportHint)::before { content: ''; position: absolute; inset: -8px 0 100%; }
+.itgTheme :where(.csvExport[data-hint-dismissed=false]:is(:hover,:focus-within) .csvExportHint) { visibility: visible; }
+.itgTheme :where(.csvExport>[role=alert]) { flex: 1 0 100%; padding: 8px 10px; }
+.itgTheme :where(.kanbanCol) { background: var(--itg-sidebar); border-color: var(--itg-border); border-top-width: 2px; border-radius: 12px; }
+.itgTheme :where(.kanbanCol[data-drag-over=true]) { background: var(--itg-accent-soft); box-shadow: inset 0 0 0 1px var(--itg-accent); }
+.itgTheme :where(.dot) { background: var(--itg-accent); }
+.itgTheme :where(.colHead b) { color: var(--itg-text); font-size: 13px; }
+.itgTheme :where(.colHead em,.colHead>strong) { color: var(--itg-secondary); }
+.itgTheme :where(.colHead em) { background: var(--itg-elevated); }
+.itgTheme :where(.deal) { min-width: 0; padding: 18px 16px; background: var(--itg-surface); color: var(--itg-text); border: 1px solid var(--itg-border); border-radius: 10px; box-shadow: none; transition: background-color var(--itg-duration),border-color var(--itg-duration); }
+.itgTheme :where(.deal:hover) { background: var(--itg-elevated); border-color: var(--itg-control-border); transform: none; box-shadow: none; }
+.itgTheme :where(.deal h3) { color: var(--itg-text); font-size: 14px; line-height: 1.5; }
+.itgTheme :where(.deal p,.deal .crmCardCompany,.deal .crmCardContact) { color: var(--itg-secondary); font-size: 12px; }
+.itgTheme :where(.dealTop small) { font-size: 11px; }
+.itgTheme :where(.crmCardValue strong) { color: var(--itg-text); font-size: 17px; font-variant-numeric: tabular-nums; }
+.itgTheme :where(.deal .follow) { color: var(--itg-secondary); border-color: var(--itg-border); font-size: 11px; }
+.itgTheme :where(.deal .follow.late) { color: var(--itg-warning); }
+.itgTheme :where(.deal .follow.late span) { background: var(--itg-warning-soft); color: var(--itg-warning); }
+.itgTheme :where(.addDeal) { background: transparent; color: var(--itg-secondary); border-color: var(--itg-control-border); font-size: 12px; min-height: 44px; }
+.itgTheme :where(.addDeal:hover) { background: var(--itg-accent-soft); color: var(--itg-accent); border-color: var(--itg-accent); }
+
+/* Overview. */
+.itgTheme :where(.homeFilterBar) { flex-wrap: wrap; align-items: start; }
+.itgTheme :where(.homeFilterBar details) { min-width: 0; padding: 0; margin: 0; border: 0; border-radius: 0; background: transparent; color: var(--itg-secondary); }
+.itgTheme :where(.homeFilterFields) { min-width: 0; }
+.itgTheme :where(.homeFilterFields label) { min-width: 0; flex: 1 1 160px; }
+.itgTheme :where(.homeWelcome) { min-height: 0; padding: 8px 0 28px; margin-bottom: 28px; gap: 40px; align-items: center; background: transparent; color: var(--itg-text); border: 0; border-bottom: 1px solid var(--itg-border); border-radius: 0; }
+.itgTheme :where(.homeWelcome h2) { font-size: clamp(28px,3vw,40px); line-height: 1.18; font-weight: 500; letter-spacing: -1.2px; margin: 14px 0; }
+.itgTheme :where(.homeWelcome p) { max-width: 42ch; color: var(--itg-secondary); font-size: 13px; }
+.itgTheme :where(.homeEyebrow>span) { background: var(--itg-accent); }
+.itgTheme :where(.homeWelcomeActions) { gap: 8px; flex-wrap: wrap; }
+.itgTheme :where(.homeOperationalSummary) { flex: 0 1 320px; min-width: 230px; margin: 0; padding: 4px 0 4px 32px; border-left: 1px solid var(--itg-border); }
+.itgTheme :where(.homeOperationalSummary>div) { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; padding: 12px 0; }
+.itgTheme :where(.homeOperationalSummary dt) { font-size: 13px; color: var(--itg-secondary); }
+.itgTheme :where(.homeOperationalSummary dd) { margin: 0; font-size: 26px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.itgTheme :where(.homeOperationalSummary .attentionValue) { color: var(--itg-warning); }
+.itgTheme :where(.homeMetrics) { gap: 0; overflow: hidden; background: var(--itg-surface); border: 1px solid var(--itg-border); border-radius: 12px; }
+.itgTheme :where(.homeMetric) { padding: 24px; border: 0; border-right: 1px solid var(--itg-border); border-radius: 0; background: transparent; }
+.itgTheme :where(.homeMetric:last-child) { border-right: 0; }
+.itgTheme :where(.homeMetricTop,.homeMetric>small,.homeWorkCard>div>span,.homeWorkCard small,.homeWidgetDescription) { color: var(--itg-secondary); font-size: 12px; }
+.itgTheme :where(.homeMetricIcon,.homeWorkIcon) { background: var(--itg-elevated); color: var(--itg-secondary); }
+.itgTheme :where(.homeMetricIcon.red,.homeMetricIcon.green) { background: var(--itg-accent-soft); color: var(--itg-accent); }
+.itgTheme :where(.homeMetric>strong,.metric>strong) { margin: 14px 0 10px; color: var(--itg-text); font-size: 34px; line-height: 1.1; letter-spacing: -1px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.itgTheme :where(.metric:first-child) { border-top: 1px solid var(--itg-border); }
+.itgTheme :where(.homeWidget,.homeWorkCard) { padding: 24px; }
+.itgTheme :where(.homeWidgetHead h2) { margin-top: 0; font-size: 18px; }
+.itgTheme :where(.homeSectionHeading h2) { font-size: 16px; }
+.itgTheme :where(.homeFunnel) { gap: 20px; }
+.itgTheme :where(.homeFunnelTrack) { height: 10px; border-radius: 3px; background: var(--itg-elevated); }
+.itgTheme :where(.homeFunnelTrack>div) { background: #4f8c64; }
+.itgTheme :where(.homeFunnelRow:first-child .homeFunnelTrack>div) { background: var(--itg-accent); }
+.itgTheme :where(.homeFunnelRow.won .homeFunnelTrack) { background: var(--itg-accent-soft); }
+.itgTheme :where(.homeFunnelRow.won .homeFunnelTrack>div) { background: #9dc9ac; }
+.itgTheme :where(.homeFunnelRow.lost .homeFunnelTrack) { background: var(--itg-elevated); }
+.itgTheme :where(.homeFunnelRow.lost .homeFunnelTrack>div) { background: var(--itg-secondary); }
+.itgTheme :where(.homeFunnelLegend i) { background: var(--itg-accent); }
+.itgTheme :where(.homeFocusList>button) { min-height: 72px; padding: 16px 0; border: 0; border-top: 1px solid var(--itg-border); border-radius: 0; background: transparent; color: var(--itg-text); }
+.itgTheme :where(.homeFocusList>button:hover) { background: transparent; color: var(--itg-accent); }
+.itgTheme :where(.homeFocusList>button:hover b) { color: inherit; }
+.itgTheme :where(.homeFocusList small) { font-size: 12px; color: var(--itg-secondary); }
+.itgTheme :where(.homeFocusCount) { min-width: 32px; background: var(--itg-elevated); color: var(--itg-secondary); }
+.itgTheme :where(.homeFocusCount.hasItems) { background: var(--itg-warning-soft); color: var(--itg-warning); }
+.itgTheme :where(.homeQuickStart) { background: var(--itg-accent-soft); border-color: var(--itg-border); border-radius: 12px; }
+.itgTheme :where(.homeQuickStart p) { display: block; color: var(--itg-secondary); font-size: 12px; }
+.itgTheme :where(.homeQuickStart button) { margin: 8px 0 0; }
+.itgTheme :where(.homeWorkCard>button) { width: 36px; height: 36px; min-height: 36px; padding: 0; border: 0; background: transparent; color: var(--itg-secondary); }
+.itgTheme :where(.homeWorkCard>button:hover) { background: var(--itg-elevated); color: var(--itg-accent); }
+.itgTheme :where(.homeRefresh) { background: var(--itg-surface); color: var(--itg-secondary); border-color: var(--itg-control-border); }
+.itgTheme :where(.homeWidgetFoot) { border-color: var(--itg-border); }
+.itgTheme :where(.homeStatusLine,.homeDataNote,.homeSectionHeading>span,.homeFocusNote,.homeWidgetFoot,.homeFunnelLegend,.homeFunnelAmount,.homeFunnelTitle small,.homeFilterBar>span) { color: var(--itg-secondary); font-size: 11px; }
+
+/* Editors and overlays, including the task/deal forms missed by the old
+   global palette. Text buttons and icon close buttons have different geometry. */
+.itgTheme :where(.modalBackdrop,.drawerBackdrop) { background: #080d0bbf; backdrop-filter: none; }
+.itgTheme :where(.modalBackdrop) { padding: 20px; }
+.itgTheme :where(.drawer,.dealModal) { min-width: 0; max-width: 100%; padding: 28px; background: var(--itg-surface); color: var(--itg-text); border: 1px solid var(--itg-border); box-shadow: 0 24px 80px #0006; }
+.itgTheme :where(.dealModal) { max-height: calc(100dvh - 40px); overflow: auto; overscroll-behavior: contain; }
+.itgTheme :where(.drawer) { animation: itg-drawer-in 180ms var(--itg-ease); overscroll-behavior: contain; }
+.itgTheme :where(.drawerHead) { align-items: flex-start; gap: 16px; }
+.itgTheme :where(.drawerHead h2) { margin: 0; font-size: 22px; font-weight: 600; line-height: 1.3; }
+.itgTheme :where(.drawerHead small) { color: var(--itg-secondary); font-size: 12px; text-transform: none; letter-spacing: 0; }
+.itgTheme :where(.drawerHead button) { flex-shrink: 0; width: auto; height: 40px; min-width: 40px; padding: 0 12px; background: var(--itg-elevated); color: var(--itg-secondary); }
+.itgTheme :where(.drawerHead button:has(svg)) { width: 40px; padding: 0; }
+.itgTheme :where(.drawerSection h3,.dealDetailBlock h4) { color: var(--itg-text); font-size: 14px; }
+.itgTheme :where(.drawerSection label,.dealModal label,.clientEditor label,.stageSettingsRow label,.pipelineSettingsRow label,.stageSettings form label,.pipelineSettings form label) { display: grid; grid-template-columns: minmax(0,1fr); gap: 6px; min-width: 0; font-size: 13px; color: var(--itg-secondary); }
+.itgTheme :where(.drawerSection label:has(input[type=checkbox]),.dealModal label:has(input[type=checkbox]),.contactCompanies label,.dealTaskList label) { display: flex; align-items: center; gap: 8px; }
+.itgTheme :where(.drawerSection fieldset>label) { margin: 12px 0; }
+.itgTheme :where(.drawerSection input:not([type=checkbox]):not([type=radio]):not([type=color]),.drawerSection select,.drawerSection textarea,.dealModal input:not([type=checkbox]):not([type=radio]):not([type=color]),.dealModal select,.dealModal textarea) { width: 100%; }
+.itgTheme :where(.drawerSection fieldset>button+button) { margin-left: 8px; }
+.itgTheme :where(.dealStatus>span) { background: var(--itg-accent-soft); color: var(--itg-accent); }
+.itgTheme :where(.dealStatus>strong) { color: var(--itg-text); }
+.itgTheme :where(.followEditor) { background: var(--itg-canvas); border-color: var(--itg-border); }
+.itgTheme :where(.followEditor .noteBtn) { margin-top: 8px; width: 100%; }
+.itgTheme :where(.activityList li) { background: var(--itg-canvas); border-color: var(--itg-border); border-left-color: var(--itg-accent); }
+.itgTheme :where(.activityList time,.infoLine,.infoLine span,.pipelineSettingsRow span,.clientDirectoryBody aside label,.dealTaskList p,.myDayHead p,.myDayCount,.myDayList small,.calendarTask small,.workGanttRow small,.utmGrid label) { color: var(--itg-secondary); }
+.itgTheme :where(.stageSettingsRow,.pipelineSettingsRow,.contactCompanies,.invoicePrint) { border-color: var(--itg-border); }
+.itgTheme :where(.stageSettingsRow label,.stageSettings form label,.clientDirectoryBody>section,.clientEditor) { min-width: 0; }
+.itgTheme :where(.stageSettings form) { flex-wrap: wrap; }
+.itgTheme :where(.stageSettings form label) { flex: 1 1 180px; }
+.itgTheme :where(.clientListButton) { background: transparent; color: var(--itg-text); border: 0; }
+.itgTheme :where(.clientListButton:hover,.clientListButton[aria-current=true]) { background: var(--itg-accent-soft); color: var(--itg-accent); }
+.itgTheme :where(.myDayList span) { background: var(--itg-elevated); color: var(--itg-secondary); }
+.itgTheme :where(.myDayList .myDayOverdue) { background: var(--itg-warning-soft); color: var(--itg-warning); }
+.itgTheme :where(.myDayHead) { flex-wrap: wrap; }
+.itgTheme :where(.plainList li,.inlineForm) { min-width: 0; }
+.itgTheme :where(.inlineForm>input,.inlineForm>select) { flex: 1 1 160px; }
+
+.itgTheme :where(.calendarTools label) { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+.itgTheme :where(.calendarTools label:has(select)) { display: grid; flex: 1 1 240px; }
+.itgTheme :where(.calendarTools select) { width: 100%; }
+.itgTheme :where(.taskCalendar td.outsideMonth) { background: var(--itg-sidebar); }
+.itgTheme :where(.calendarDayHead time[aria-current=date]) { background: var(--itg-accent); color: var(--itg-on-accent); }
+.itgTheme :where(.calendarDayHead button,.calendarMore) { min-height: 28px; min-width: 28px; padding: 3px 6px; background: var(--itg-elevated); color: var(--itg-accent); border: 0; }
+.itgTheme :where(.calendarTask) { min-height: 0; padding: 6px; background: var(--itg-elevated); color: var(--itg-text); border-color: var(--itg-control-border); font-size: 12px; }
+.itgTheme :where(.calendarTask.completed) { background: var(--itg-accent-soft); color: var(--itg-accent); border-color: var(--itg-border); }
+.itgTheme :where(.workGanttTrack) { background: var(--itg-elevated); }
+.itgTheme :where(.workGanttBar) { background: #486552; color: var(--itg-text); }
+.itgTheme :where(.workGanttBar.ACTIVE) { background: var(--itg-accent); color: var(--itg-on-accent); }
+.itgTheme :where(.workGanttBar.DONE) { background: #9dc9ac; color: var(--itg-on-accent); }
+
+/* Authentication. */
+.itgTheme :where(.authPage) { background: var(--itg-canvas); color: var(--itg-text); }
+.itgTheme :where(.authIntro) { background: var(--itg-sidebar); border-right: 1px solid var(--itg-border); }
+.itgTheme :where(.authIntro h2) { font-size: clamp(36px,4vw,64px); line-height: 1.15; font-weight: 500; letter-spacing: -1.6px; }
+.itgTheme :where(.authIntro>p) { max-width: 34ch; color: var(--itg-secondary); font-size: 15px; }
+.itgTheme :where(.authEyebrow)::before { background: var(--itg-accent); }
+.itgTheme :where(.authIntroArt) { display: none; }
+.itgTheme :where(.authIntroFooter) { letter-spacing: 0; font-size: 12px; color: var(--itg-secondary); }
+.itgTheme :where(.authCard) { background: var(--itg-surface); border-color: var(--itg-border); box-shadow: none; padding: 36px; border-radius: 16px; }
+.itgTheme :where(.authCard .brand) { padding: 0; }
+.itgTheme :where(.authCard label) { color: var(--itg-secondary); font-size: 13px; }
+.itgTheme :where(.authCard input) { min-height: 46px; }
+.itgTheme :where(.authCard .primary,.authCard .noteBtn) { width: 100%; min-height: 44px; }
+
+@keyframes itg-drawer-in {
+  from { opacity: .6; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@media (max-width: 1120px) {
+  .itgTheme :where(.shell) { grid-template-columns: 200px minmax(0,1fr); }
+  .itgTheme :where(.sidebar) { padding-inline: 12px; }
+  .itgTheme :where(.homeWelcome) { gap: 24px; }
+  .itgTheme :where(.homeOperationalSummary) { min-width: 210px; padding-left: 24px; }
+  .itgTheme :where(.homeMetric) { padding: 20px 16px; }
+}
+@media (max-width: 800px) {
+  .itgTheme :where(.shell) { grid-template-columns: 70px minmax(0,1fr); }
+  .itgTheme :where(.sidebar) { padding: 20px 8px 12px; }
+  .itgTheme :where(.brand) { padding: 0 8px 20px; }
+  .itgTheme :where(.sidebar nav) { padding-inline: 0; }
+  .itgTheme :where(.sidebar nav button) { justify-content: center; padding: 11px 6px; }
+  .itgTheme :where(.profile) { margin-top: 12px; padding-inline: 0; }
+  .itgTheme :where(.profile button) { padding: 4px 0; font-size: 11px; }
+  .itgTheme :where(.homeOperationalSummary) { min-width: 180px; padding-left: 20px; }
+  .itgTheme :where(.homeMetric) { padding: 18px 14px; }
+  .itgTheme :where(.homeMetricTop) { min-height: 36px; }
+  .itgTheme :where(.homeWelcome) { flex-wrap: wrap; }
+}
+@media (max-width: 760px) {
+  .itgTheme :where(.authIntro) { min-height: 0; padding: 28px; border-right: 0; border-bottom: 1px solid var(--itg-border); }
+  .itgTheme :where(.authIntro h2) { font-size: 32px; letter-spacing: -.8px; }
+  .itgTheme :where(.authIntro>p) { font-size: 13px; }
+}
+@media (max-width: 650px) {
+  .itgTheme :where(h1,.homePageHeading h1,.crmPageHeading h1,.portalModule h1) { font-size: 26px; }
+  .itgTheme :where(.homePageHeading,.crmPageHeading) { align-items: stretch; flex-wrap: wrap; }
+  .itgTheme :where(.homeWorkspace,.crmHeaderActions) { width: 100%; min-width: 0; }
+  .itgTheme :where(.homeWorkspace select) { width: 100%; max-width: 100%; }
+  .itgTheme :where(.crmHeaderActions) { gap: 8px; flex-wrap: wrap; }
+  .itgTheme :where(.crmHeaderActions select) { flex: 1 1 150px; min-width: 0; }
+  .itgTheme :where(.crmHeaderActions .primary) { flex: 1 1 130px; }
+  .itgTheme :where(.homeWelcome) { flex-direction: column; align-items: stretch; gap: 24px; padding-bottom: 24px; }
+  .itgTheme :where(.homeOperationalSummary) { flex-basis: auto; min-width: 0; padding: 12px 0 0; border: 0; border-top: 1px solid var(--itg-border); }
+  .itgTheme :where(.homeOperationalSummary>div) { padding: 6px 0; }
+  .itgTheme :where(.homeOperationalSummary dd) { font-size: 22px; }
+  .itgTheme :where(.homeMetrics) { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .itgTheme :where(.homeMetric:nth-child(2)) { border-right: 0; }
+  .itgTheme :where(.homeMetric:nth-child(-n+2)) { border-bottom: 1px solid var(--itg-border); }
+  .itgTheme :where(.homeMetric>strong) { font-size: 30px; }
+  .itgTheme :where(.homeWidget,.homeWorkCard,.settingsCard) { padding: 18px; }
+  .itgTheme :where(.crmFollowFilters .filter,.crmBoardSettings .filter) { min-height: 40px; }
+  .itgTheme :where(.crmSectionNav,.homeTabs) { gap: 16px; overflow-x: auto; scrollbar-width: thin; }
+  .itgTheme :where(.crmSectionNav>button,.crmCurrentTab,.homeTabs button) { flex-shrink: 0; white-space: nowrap; font-size: 12px; }
+  .itgTheme :where(.crmBoardSettings) { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); width: 100%; gap: 8px; }
+  .itgTheme :where(.crmBoardSettings .filter) { height: 100%; white-space: normal; text-align: left; }
+  .itgTheme :where(.crmBoardSettings .csvExport) { grid-column: 1 / -1; flex-direction: row; align-items: center; }
+  .itgTheme :where(.csvExport .csvExportHint) { right: auto; left: 0; }
+  .itgTheme :where(.drawer,.dealModal) { padding: 20px; }
+  .itgTheme :where(.drawerSection fieldset>button) { margin: 4px 4px 4px 0; }
+  .itgTheme :where(.authCard) { padding: 28px; }
+}
+@media (max-width: 540px) {
+  .itgTheme :where(.shell) { grid-template-columns: 54px minmax(0,1fr); }
+  .itgTheme :where(.sidebar) { padding: 18px 5px 12px; }
+  .itgTheme :where(.brand) { padding: 0 5px 16px; }
+  .itgTheme :where(.homeTopbar) { height: 64px; gap: 10px; margin-bottom: 24px; }
+  .itgTheme :where(.homeSearchButton) { width: auto; flex: 1; padding: 9px; font-size: 12px; }
+  .itgTheme :where(.homeMetric) { padding: 16px 12px; }
+  .itgTheme :where(.homeMetricIcon) { display: none; }
+  .itgTheme :where(.homeMetricTop) { min-height: 0; font-size: 12px; }
+  .itgTheme :where(.homeWelcome h2) { font-size: 30px; }
+  .itgTheme :where(.homeWelcome p) { max-width: none; }
+  .itgTheme :where(.homeWidgetHead) { flex-wrap: wrap; }
+  .itgTheme :where(.stageSettingsRow) { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .itgTheme *,.itgTheme *::before,.itgTheme *::after { animation: none; transition: none; scroll-behavior: auto; }
+}
+@media print {
+  :root { color-scheme: light; background: white; }
+  .itgTheme { background: white; color: black; }
+  .itgTheme :where(.invoicePrint,.invoicePrint *) { background: white; color: black; border-color: #ccc; box-shadow: none; }
+  .itgTheme :where(.drawer) { animation: none; }
+}

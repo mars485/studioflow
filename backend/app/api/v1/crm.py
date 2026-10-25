@@ -1,21 +1,33 @@
-from datetime import datetime, timedelta, timezone
-from uuid import UUID
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import current_user, workspace_access, workspace_admin
-from app.api.v1.schemas import (ClientCreate, ClientOut, ClientUpdate, ContactCreate, ContactOut, ContactUpdate, DealCreate, DealOut,
-                                DealUpdate, DealActivityCreate, DealActivityOut, DealTaskCreate, DealTaskOut, DealTaskUpdate, DueTaskReminder, FollowUp,
+from app.api.v1.schemas import (ClientCreate, ClientOut, ClientUpdate, ContactCreate, ContactOut, ContactUpdate, DealAttachmentCreate, DealAttachmentOut,
+                                DealContactLinkCreate, DealContactLinkOut, DealContactLinkUpdate, DealCreate, DealCustomField, DealCustomFields,
+                                DealCustomFieldsOut, DealOut, DealTagCreate, DealTagOut, DealUpdate, DealWatcherCreate, DealWatcherOut,
+                                DealActivityCreate, DealActivityOut, DealTaskCreate, DealTaskOut, DealTaskUpdate, DueTaskReminder, FollowUp,
                                 FollowUpComplete, FollowUpCompleteResult, FollowUpCompletionOut, MyDayOut, PipelineCreate, PipelineOut, PipelineUpdate,
-                                TaskReminderCreate, TaskReminderOut,
+                                TaskChecklistItemCreate, TaskChecklistItemOut, TaskChecklistItemUpdate, TaskCreate, TaskOut, TaskReminderCreate,
+                                TaskReminderOut, TaskStatusCreate, TaskStatusOrder, TaskStatusOut, TaskStatusUpdate, TaskUpdate,
                                 StageCreate, StageOrder, StageOut, StageUpdate)
 from app.core.database import get_db
-from app.models import Client, Contact, ContactClient, Deal, DealActivity, DealTask, FollowUpCompletion, Pipeline, PipelineStage, TaskReminder, User, Workspace, WorkspaceMember
+from app.models import (Client, Contact, ContactClient, Deal, DealActivity, DealAttachment, DealContact, DealCustomValue, DealTag, DealTagLink, DealWatcher,
+                        FollowUpCompletion, Pipeline, PipelineStage, Project, Task, TaskChecklistItem, TaskReminder, TaskStatus, TaskWatcher, User, Workspace,
+                        WorkspaceMember)
 from app.models.entities import StageType
+from app.models.notifications import Notification
+from app.services.task_time import stop_timers
+from app.services.task_recurrence import repeat_completed_task
+from app.services.webhooks import emit_event
+from app.services.audit import audit_deal, deal_snapshot
 
 router = APIRouter(tags=["CRM"])
 scoped = APIRouter(prefix="/workspaces/{workspace_id}")
@@ -277,7 +289,7 @@ async def delete_client(client_id: UUID, workspace_id: UUID = Depends(workspace_
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(409, "Клиента со сделками удалить нельзя")
+        raise HTTPException(409, "Клиента со связанными сделками, проектами или счетами удалить нельзя")
     return Response(status_code=204)
 
 
@@ -443,14 +455,17 @@ async def validate_responsible(db: AsyncSession, workspace_id: UUID, responsible
 
 
 async def validate_deal_contact(db: AsyncSession, workspace_id: UUID,
-                                client_id: UUID, contact_id: UUID | None) -> Contact | None:
+                                client_id: UUID, contact_id: UUID | None, deal_id: UUID | None = None) -> Contact | None:
     if contact_id is None:
         return None
     row = await db.scalar(select(Contact).where(Contact.id == contact_id,
         Contact.workspace_id == workspace_id).with_for_update())
     link = await db.scalar(select(ContactClient.contact_id).where(
         ContactClient.workspace_id == workspace_id, ContactClient.contact_id == contact_id,
-        ContactClient.client_id == client_id).with_for_update())
+         ContactClient.client_id == client_id).with_for_update())
+    if link is None and deal_id is not None:
+        link = await db.scalar(select(DealContact.contact_id).where(DealContact.workspace_id == workspace_id,
+            DealContact.deal_id == deal_id, DealContact.contact_id == contact_id))
     if row is None or link is None:
         raise HTTPException(422, "Контакт должен быть связан с компанией этой сделки")
     return row
@@ -458,6 +473,28 @@ async def validate_deal_contact(db: AsyncSession, workspace_id: UUID,
 
 def contact_label(row: Contact) -> str:
     return " ".join(part for part in (row.last_name, row.first_name, row.middle_name) if part)
+
+
+async def assign_primary_contact(db: AsyncSession, deal: Deal, contact_id: UUID | None):
+    await db.execute(update(DealContact).where(DealContact.workspace_id == deal.workspace_id,
+        DealContact.deal_id == deal.id).values(is_primary=False))
+    if contact_id is not None:
+        await db.execute(pg_insert(DealContact).values(workspace_id=deal.workspace_id, deal_id=deal.id,
+            contact_id=contact_id, is_primary=False).on_conflict_do_nothing())
+        await db.execute(update(DealContact).where(DealContact.workspace_id == deal.workspace_id,
+            DealContact.deal_id == deal.id, DealContact.contact_id == contact_id).values(is_primary=True))
+        contact = await db.get(Contact, contact_id)
+        deal.contact_name = contact_label(contact)
+    else:
+        deal.contact_name = None
+    deal.contact_id = contact_id
+
+
+async def replacement_contact(db: AsyncSession, deal: Deal, exclude_id: UUID | None = None) -> UUID | None:
+    query = select(DealContact.contact_id).where(DealContact.workspace_id == deal.workspace_id, DealContact.deal_id == deal.id)
+    if exclude_id is not None:
+        query = query.where(DealContact.contact_id != exclude_id)
+    return await db.scalar(query.order_by(DealContact.created_at, DealContact.contact_id).limit(1))
 
 
 @scoped.get("/deals", response_model=list[DealOut])
@@ -475,16 +512,17 @@ async def my_day(workspace_id: UUID = Depends(workspace_access), user: User = De
                  db: AsyncSession = Depends(get_db)):
     active_deals = (Deal.workspace_id == workspace_id, PipelineStage.workspace_id == workspace_id,
                     PipelineStage.stage_type == StageType.OPEN)
-    task_rows = (await db.execute(select(DealTask, Deal.title).join(Deal,
-        (Deal.id == DealTask.deal_id) & (Deal.workspace_id == DealTask.workspace_id))
+    task_rows = (await db.execute(select(Task, TaskStatus, Deal.title).join(TaskStatus,
+        (TaskStatus.workspace_id == Task.workspace_id) & (TaskStatus.id == Task.status_id))
+        .join(Deal, (Deal.id == Task.deal_id) & (Deal.workspace_id == Task.workspace_id))
         .join(PipelineStage, PipelineStage.id == Deal.stage_id)
-        .where(*active_deals, DealTask.workspace_id == workspace_id,
-               DealTask.assignee_user_id == user.id, DealTask.status == "OPEN")
-        .order_by(DealTask.due_at, DealTask.created_at, DealTask.id))).all()
+        .where(*active_deals, Task.workspace_id == workspace_id, TaskStatus.is_final.is_(False),
+               Task.assignee_user_id == user.id)
+        .order_by(Task.due_at, Task.created_at, Task.id))).all()
     follow_rows = (await db.scalars(select(Deal).join(PipelineStage, PipelineStage.id == Deal.stage_id)
         .where(*active_deals, Deal.responsible_user_id == user.id, Deal.follow_up_at.is_not(None))
         .order_by(Deal.follow_up_at, Deal.id))).all()
-    return {"tasks": [{"task": task, "deal_title": title} for task, title in task_rows],
+    return {"tasks": [{"task": legacy_task(task, status), "deal_title": title} for task, status, title in task_rows],
             "follow_ups": [{"deal_id": deal.id, "deal_title": deal.title,
                             "at": deal.follow_up_at, "action": deal.follow_up_action,
                             "comment": deal.follow_up_comment} for deal in follow_rows]}
@@ -492,7 +530,7 @@ async def my_day(workspace_id: UUID = Depends(workspace_access), user: User = De
 
 @scoped.post("/deals", response_model=DealOut, status_code=201)
 async def create_deal(data: DealCreate, workspace_id: UUID = Depends(workspace_access),
-                      db: AsyncSession = Depends(get_db)):
+                      db: AsyncSession = Depends(get_db), user: User = Depends(current_user)):
     await validate_relations(db, workspace_id, data.client_id, data.pipeline_id, data.stage_id)
     contact = await validate_deal_contact(db, workspace_id, data.client_id, data.contact_id)
     await validate_responsible(db, workspace_id, data.responsible_user_id)
@@ -502,6 +540,11 @@ async def create_deal(data: DealCreate, workspace_id: UUID = Depends(workspace_a
         values["contact_name"] = contact_label(contact)
     row = Deal(workspace_id=workspace_id, currency=workspace.currency, **values)
     db.add(row)
+    await db.flush()
+    if contact is not None:
+        await assign_primary_contact(db, row, contact.id)
+    await emit_event(db, workspace_id, 'deal.created', row.id)
+    audit_deal(db, row, 'CREATED', user=user)
     await db.commit()
     await db.refresh(row)
     return row
@@ -517,6 +560,7 @@ async def get_deal(deal_id: UUID, workspace_id: UUID = Depends(workspace_access)
 async def update_deal(deal_id: UUID, data: DealUpdate, workspace_id: UUID = Depends(workspace_access),
                       user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     row = await lock_deal(db, workspace_id, deal_id)
+    before = deal_snapshot(row)
     changes = data.model_dump(exclude_unset=True)
     start_date = changes.get("start_date", row.start_date)
     end_date = changes.get("end_date", row.end_date)
@@ -525,12 +569,13 @@ async def update_deal(deal_id: UUID, data: DealUpdate, workspace_id: UUID = Depe
     await validate_relations(db, workspace_id, changes.get("client_id", row.client_id),
                              changes.get("pipeline_id", row.pipeline_id), changes.get("stage_id", row.stage_id))
     contact = await validate_deal_contact(db, workspace_id, changes.get("client_id", row.client_id),
-                                          changes.get("contact_id", row.contact_id))
+                                          changes.get("contact_id", row.contact_id), deal_id)
     if "contact_id" in changes:
         changes["contact_name"] = contact_label(contact) if contact else None
     await validate_responsible(db, workspace_id, changes.get("responsible_user_id", row.responsible_user_id))
     next_stage_id = changes.get("stage_id", row.stage_id)
     if next_stage_id != row.stage_id:
+        await emit_event(db, workspace_id, 'deal.stage_changed', row.id, old_stage_id=row.stage_id, stage_id=next_stage_id)
         stages = (await db.scalars(select(PipelineStage).where(
             PipelineStage.workspace_id == workspace_id, PipelineStage.id.in_([row.stage_id, next_stage_id])))).all()
         names = {stage.id: stage.name for stage in stages}
@@ -539,6 +584,14 @@ async def update_deal(deal_id: UUID, data: DealUpdate, workspace_id: UUID = Depe
                             kind="STAGE_CHANGE", body=f"Стадия: {names[row.stage_id]} → {names[next_stage_id]}"))
     for name, value in changes.items():
         setattr(row, name, value)
+    if "contact_id" in changes:
+        primary_id = changes["contact_id"]
+        if primary_id is None:
+            await db.execute(delete(DealContact).where(DealContact.workspace_id == workspace_id,
+                DealContact.deal_id == deal_id, DealContact.is_primary.is_(True)))
+            primary_id = await replacement_contact(db, row)
+        await assign_primary_contact(db, row, primary_id)
+    audit_deal(db, row, 'UPDATED', user=user, before=before)
     await db.commit()
     await db.refresh(row)
     return row
@@ -546,18 +599,92 @@ async def update_deal(deal_id: UUID, data: DealUpdate, workspace_id: UUID = Depe
 
 @scoped.delete("/deals/{deal_id}", status_code=204)
 async def delete_deal(deal_id: UUID, workspace_id: UUID = Depends(workspace_admin),
-                      db: AsyncSession = Depends(get_db)):
-    await db.delete(await find_deal(db, workspace_id, deal_id))
+                      db: AsyncSession = Depends(get_db), user: User = Depends(current_user)):
+    row = await lock_deal(db, workspace_id, deal_id)
+    audit_deal(db, row, 'DELETED', user=user)
+    await db.delete(row)
     await db.commit()
     return Response(status_code=204)
+
+
+DEFAULT_STATUSES = [("Сделать", 0, False), ("В работе", 1, False), ("Ожидает контроля", 2, False), ("Завершено", 3, True)]
+
+
+async def ensure_task_statuses(db: AsyncSession, workspace_id: UUID) -> list[TaskStatus]:
+    # Serialize first initialization; renamed/deleted defaults must not reappear.
+    await db.scalar(select(Workspace).where(Workspace.id == workspace_id).with_for_update())
+    if not await db.scalar(select(TaskStatus.id).where(TaskStatus.workspace_id == workspace_id).limit(1)):
+        await db.execute(pg_insert(TaskStatus).values([
+            {"id": uuid4(), "workspace_id": workspace_id, "name": name, "position": position, "is_final": final}
+            for name, position, final in DEFAULT_STATUSES]).on_conflict_do_nothing())
+    return (await db.scalars(select(TaskStatus).where(TaskStatus.workspace_id == workspace_id)
+                             .order_by(TaskStatus.position, TaskStatus.name))).all()
+
+
+async def default_open_status(db: AsyncSession, workspace_id: UUID) -> TaskStatus:
+    for status in await ensure_task_statuses(db, workspace_id):
+        if not status.is_final:
+            return status
+    raise HTTPException(409, "В рабочем процессе нет незавершённого статуса")
+
+
+async def final_task_status(db: AsyncSession, workspace_id: UUID) -> TaskStatus:
+    for status in await ensure_task_statuses(db, workspace_id):
+        if status.is_final:
+            return status
+    raise HTTPException(409, "В рабочем процессе нет завершающего статуса")
+
+
+def apply_task_status(task: Task, status: TaskStatus, user: User):
+    task.status_id = status.id
+    if status.is_final:
+        if task.completed_at is None:
+            task.completed_at = datetime.now(timezone.utc)
+            task.completed_by_user_id = user.id
+    else:
+        task.completed_at = None
+        task.completed_by_user_id = None
+
+
+def task_out(task: Task, status: TaskStatus, done: int = 0, total: int = 0) -> dict:
+    return {"id": task.id, "workspace_id": task.workspace_id, "title": task.title, "description": task.description,
+            "status_id": status.id, "status_name": status.name, "is_final": status.is_final,
+            "priority": task.priority, "assignee_user_id": task.assignee_user_id,
+            "creator_user_id": task.creator_user_id, "completed_by_user_id": task.completed_by_user_id,
+            "start_at": task.start_at, "due_at": task.due_at, "estimate_minutes": task.estimate_minutes,
+            "deal_id": task.deal_id, "project_id": task.project_id, "contact_id": task.contact_id,
+            "parent_task_id": task.parent_task_id,
+            "completed_at": task.completed_at, "created_at": task.created_at, "updated_at": task.updated_at,
+            "checklist_done": done, "checklist_total": total}
+
+
+def legacy_task(task: Task, status: TaskStatus) -> dict:
+    return {"id": task.id, "workspace_id": task.workspace_id, "deal_id": task.deal_id, "title": task.title,
+            "description": task.description, "priority": task.priority,
+            "status": "DONE" if status.is_final else "OPEN", "assignee_user_id": task.assignee_user_id,
+            "created_by_user_id": task.creator_user_id, "completed_by_user_id": task.completed_by_user_id,
+            "start_at": task.start_at, "due_at": task.due_at, "created_at": task.created_at,
+            "updated_at": task.updated_at, "completed_at": task.completed_at}
+
+
+async def task_rows(db: AsyncSession, workspace_id: UUID, *conditions, limit: int | None = None, offset: int = 0) -> list:
+    done = select(func.count()).where(TaskChecklistItem.workspace_id == Task.workspace_id,
+                                      TaskChecklistItem.task_id == Task.id,
+                                      TaskChecklistItem.is_done.is_(True)).scalar_subquery()
+    total = select(func.count()).where(TaskChecklistItem.workspace_id == Task.workspace_id,
+                                       TaskChecklistItem.task_id == Task.id).scalar_subquery()
+    return (await db.execute(select(Task, TaskStatus, done.label("done"), total.label("total"))
+        .join(TaskStatus, (TaskStatus.workspace_id == Task.workspace_id) & (TaskStatus.id == Task.status_id))
+        .where(Task.workspace_id == workspace_id, *conditions)
+        .order_by(TaskStatus.is_final, TaskStatus.position, Task.due_at, Task.created_at, Task.id)
+        .limit(limit).offset(offset))).all()
 
 
 @scoped.get("/deals/{deal_id}/tasks", response_model=list[DealTaskOut])
 async def deal_tasks(deal_id: UUID, workspace_id: UUID = Depends(workspace_access),
                      db: AsyncSession = Depends(get_db)):
     await find_deal(db, workspace_id, deal_id)
-    return (await db.scalars(select(DealTask).where(DealTask.workspace_id == workspace_id,
-        DealTask.deal_id == deal_id).order_by(DealTask.status, DealTask.due_at, DealTask.created_at, DealTask.id))).all()
+    return [legacy_task(task, status) for task, status, _, _ in await task_rows(db, workspace_id, Task.deal_id == deal_id)]
 
 
 @scoped.post("/deals/{deal_id}/tasks", response_model=DealTaskOut, status_code=201)
@@ -566,29 +693,34 @@ async def create_deal_task(deal_id: UUID, data: DealTaskCreate,
                            db: AsyncSession = Depends(get_db)):
     await find_deal(db, workspace_id, deal_id)
     await validate_responsible(db, workspace_id, data.assignee_user_id)
-    row = DealTask(workspace_id=workspace_id, deal_id=deal_id,
-        created_by_user_id=user.id, **data.model_dump())
+    status = await default_open_status(db, workspace_id)
+    row = Task(workspace_id=workspace_id, deal_id=deal_id, status_id=status.id, creator_user_id=user.id,
+               **data.model_dump())
     db.add(row)
     await db.commit()
     await db.refresh(row)
-    return row
+    return legacy_task(row, status)
 
 
 async def find_deal_task(db: AsyncSession, workspace_id: UUID, deal_id: UUID, task_id: UUID,
-                         lock: bool = False) -> DealTask:
-    query = select(DealTask).where(DealTask.id == task_id, DealTask.workspace_id == workspace_id,
-        DealTask.deal_id == deal_id)
-    row = await db.scalar(query.with_for_update() if lock else query)
-    if row is None:
+                         lock: bool = False) -> tuple[Task, TaskStatus]:
+    if lock:
+        await lock_workspace(db, workspace_id)
+    query = select(Task, TaskStatus).join(TaskStatus, (TaskStatus.workspace_id == Task.workspace_id) &
+        (TaskStatus.id == Task.status_id)).where(Task.id == task_id, Task.workspace_id == workspace_id,
+        Task.deal_id == deal_id)
+    result = (await db.execute(query.with_for_update(of=Task) if lock else query)).first()
+    if result is None:
         raise HTTPException(404, "Task not found")
-    return row
+    return result[0], result[1]
 
 
 @scoped.patch("/deals/{deal_id}/tasks/{task_id}", response_model=DealTaskOut)
 async def update_deal_task(deal_id: UUID, task_id: UUID, data: DealTaskUpdate,
                            workspace_id: UUID = Depends(workspace_access), user: User = Depends(current_user),
                            db: AsyncSession = Depends(get_db)):
-    row = await find_deal_task(db, workspace_id, deal_id, task_id, lock=True)
+    row, status = await find_deal_task(db, workspace_id, deal_id, task_id, lock=True)
+    completed_now = False
     changes = data.model_dump(exclude_unset=True)
     start_at = changes.get("start_at", row.start_at)
     due_at = changes.get("due_at", row.due_at)
@@ -596,32 +728,41 @@ async def update_deal_task(deal_id: UUID, task_id: UUID, data: DealTaskUpdate,
         raise HTTPException(422, "Дата начала задачи не может быть позже крайнего срока")
     if "assignee_user_id" in changes:
         await validate_responsible(db, workspace_id, changes["assignee_user_id"])
-    if "status" in changes and changes["status"] != row.status:
-        row.completed_at = datetime.now(timezone.utc) if changes["status"] == "DONE" else None
-        row.completed_by_user_id = user.id if changes["status"] == "DONE" else None
+    if "status" in changes:
+        wanted = changes.pop("status")
+        target = await final_task_status(db, workspace_id) if wanted == "DONE" else await default_open_status(db, workspace_id)
+        if target.id != row.status_id:
+            apply_task_status(row, target, user)
+            completed_now = target.is_final
+            status = target
     for name, value in changes.items():
         setattr(row, name, value)
+    if completed_now:
+        await stop_timers(db, workspace_id, task_id=row.id, reason="TASK_COMPLETED")
+        await repeat_completed_task(db, row, user)
+        await emit_event(db, workspace_id, 'task.completed', row.id)
     await db.commit()
     await db.refresh(row)
-    return row
+    return legacy_task(row, status)
 
 
 @scoped.delete("/deals/{deal_id}/tasks/{task_id}", status_code=204)
 async def delete_deal_task(deal_id: UUID, task_id: UUID,
                            workspace_id: UUID = Depends(workspace_admin), db: AsyncSession = Depends(get_db)):
-    await db.delete(await find_deal_task(db, workspace_id, deal_id, task_id))
+    row, _ = await find_deal_task(db, workspace_id, deal_id, task_id)
+    await db.delete(row)
     await db.commit()
     return Response(status_code=204)
 
 
-def reminder_trigger(row: TaskReminder, task: DealTask) -> datetime | None:
+def reminder_trigger(row: TaskReminder, task: Task) -> datetime | None:
     if row.kind == "DATE":
         return row.at
     base = task.start_at if row.kind == "START_OFFSET" else task.due_at
     return base - timedelta(minutes=row.offset_minutes) if base is not None else None
 
 
-def reminder_output(row: TaskReminder, task: DealTask) -> dict:
+def reminder_output(row: TaskReminder, task: Task) -> dict:
     return {"id": row.id, "workspace_id": row.workspace_id, "task_id": row.task_id,
             "recipient_user_id": row.recipient_user_id, "created_by_user_id": row.created_by_user_id,
             "kind": row.kind, "at": row.at, "offset_minutes": row.offset_minutes,
@@ -632,7 +773,7 @@ def reminder_output(row: TaskReminder, task: DealTask) -> dict:
 @scoped.get("/deals/{deal_id}/tasks/{task_id}/reminders", response_model=list[TaskReminderOut])
 async def task_reminders(deal_id: UUID, task_id: UUID, workspace_id: UUID = Depends(workspace_access),
                          db: AsyncSession = Depends(get_db)):
-    task = await find_deal_task(db, workspace_id, deal_id, task_id)
+    task, _ = await find_deal_task(db, workspace_id, deal_id, task_id)
     rows = (await db.scalars(select(TaskReminder).where(TaskReminder.workspace_id == workspace_id,
         TaskReminder.task_id == task_id).order_by(TaskReminder.created_at, TaskReminder.id))).all()
     return [reminder_output(row, task) for row in rows]
@@ -642,8 +783,8 @@ async def task_reminders(deal_id: UUID, task_id: UUID, workspace_id: UUID = Depe
 async def create_task_reminder(deal_id: UUID, task_id: UUID, data: TaskReminderCreate,
                                workspace_id: UUID = Depends(workspace_access), user: User = Depends(current_user),
                                db: AsyncSession = Depends(get_db)):
-    task = await find_deal_task(db, workspace_id, deal_id, task_id, lock=True)
-    if task.status == "DONE":
+    task, status = await find_deal_task(db, workspace_id, deal_id, task_id, lock=True)
+    if status.is_final:
         raise HTTPException(409, "Завершённой задаче нельзя назначить напоминание")
     await validate_responsible(db, workspace_id, data.recipient_user_id)
     if (data.kind == "START_OFFSET" and task.start_at is None) or (data.kind == "DUE_OFFSET" and task.due_at is None):
@@ -669,15 +810,17 @@ async def delete_task_reminder(deal_id: UUID, task_id: UUID, reminder_id: UUID,
     return Response(status_code=204)
 
 
+
 @scoped.get("/reminders/due", response_model=list[DueTaskReminder])
 async def due_task_reminders(workspace_id: UUID = Depends(workspace_access),
                              user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    rows = (await db.execute(select(TaskReminder, DealTask, Deal.title, Deal.id)
-        .join(DealTask, (DealTask.id == TaskReminder.task_id) & (DealTask.workspace_id == TaskReminder.workspace_id))
-        .join(Deal, (Deal.id == DealTask.deal_id) & (Deal.workspace_id == DealTask.workspace_id))
+    rows = (await db.execute(select(TaskReminder, Task, Deal.title, Deal.id)
+        .join(Task, (Task.id == TaskReminder.task_id) & (Task.workspace_id == TaskReminder.workspace_id))
+        .join(TaskStatus, (TaskStatus.workspace_id == Task.workspace_id) & (TaskStatus.id == Task.status_id))
+        .join(Deal, (Deal.id == Task.deal_id) & (Deal.workspace_id == Task.workspace_id))
         .join(PipelineStage, PipelineStage.id == Deal.stage_id)
         .where(TaskReminder.workspace_id == workspace_id, TaskReminder.recipient_user_id == user.id,
-               TaskReminder.acknowledged_at.is_(None), DealTask.status == "OPEN",
+               TaskReminder.acknowledged_at.is_(None), TaskStatus.is_final.is_(False),
                Deal.workspace_id == workspace_id, PipelineStage.workspace_id == workspace_id,
                PipelineStage.stage_type == StageType.OPEN))).all()
     now = datetime.now(timezone.utc)
@@ -697,8 +840,8 @@ async def acknowledge_task_reminder(reminder_id: UUID, workspace_id: UUID = Depe
         TaskReminder.workspace_id == workspace_id, TaskReminder.recipient_user_id == user.id).with_for_update())
     if row is None:
         raise HTTPException(404, "Reminder not found")
-    task = await db.scalar(select(DealTask).where(DealTask.id == row.task_id,
-        DealTask.workspace_id == workspace_id))
+    task = await db.scalar(select(Task).where(Task.id == row.task_id,
+        Task.workspace_id == workspace_id))
     if task is None:
         raise HTTPException(404, "Task not found")
     if row.acknowledged_at is None:
@@ -772,13 +915,596 @@ async def deal_activities(deal_id: UUID, workspace_id: UUID = Depends(workspace_
 async def add_deal_activity(deal_id: UUID, data: DealActivityCreate,
                             workspace_id: UUID = Depends(workspace_access),
                             user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    recipient_name = None
+    if data.recipient_user_id is not None:
+        await db.scalar(select(Workspace).where(Workspace.id == workspace_id).with_for_update())
+        await validate_workspace_member(db, workspace_id, data.recipient_user_id, "Адресат должен быть активным участником студии")
+        recipient = await db.get(User, data.recipient_user_id)
+        recipient_name = " ".join(filter(None, (recipient.first_name, recipient.last_name)))
     await find_deal(db, workspace_id, deal_id)
     row = DealActivity(workspace_id=workspace_id, deal_id=deal_id, author_user_id=user.id,
-                       author_name=" ".join(filter(None, (user.first_name, user.last_name))), body=data.body)
+                       author_name=" ".join(filter(None, (user.first_name, user.last_name))), body=data.body,
+                       kind=data.kind, recipient_user_id=data.recipient_user_id, recipient_name=recipient_name)
+    db.add(row)
+    await db.flush()
+    if data.recipient_user_id is not None:
+        db.add(Notification(workspace_id=workspace_id, recipient_user_id=data.recipient_user_id, activity_id=row.id))
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+async def validate_workspace_member(db: AsyncSession, workspace_id: UUID, user_id: UUID, message: str):
+    member = await db.scalar(select(WorkspaceMember.user_id).join(User, User.id == WorkspaceMember.user_id).where(
+        WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.user_id == user_id,
+        User.is_active.is_(True)))
+    if member is None:
+        raise HTTPException(422, message)
+
+
+@scoped.get("/tags", response_model=list[DealTagOut])
+async def workspace_tags(workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    return (await db.scalars(select(DealTag).where(DealTag.workspace_id == workspace_id)
+                             .order_by(func.lower(DealTag.name)))).all()
+
+
+@scoped.get("/deals/{deal_id}/tags", response_model=list[DealTagOut])
+async def deal_tags(deal_id: UUID, workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    await find_deal(db, workspace_id, deal_id)
+    return (await db.scalars(select(DealTag).join(DealTagLink, (DealTagLink.workspace_id == DealTag.workspace_id) &
+        (DealTagLink.tag_id == DealTag.id)).where(DealTagLink.workspace_id == workspace_id,
+        DealTagLink.deal_id == deal_id).order_by(func.lower(DealTag.name)))).all()
+
+
+@scoped.post("/deals/{deal_id}/tags", response_model=DealTagOut, status_code=201)
+async def add_deal_tag(deal_id: UUID, data: DealTagCreate, workspace_id: UUID = Depends(workspace_access),
+                       db: AsyncSession = Depends(get_db)):
+    await lock_deal(db, workspace_id, deal_id)
+    await db.execute(pg_insert(DealTag).values(id=uuid4(), workspace_id=workspace_id, name=data.name)
+                     .on_conflict_do_nothing())
+    tag = await db.scalar(select(DealTag).where(DealTag.workspace_id == workspace_id,
+                                                func.lower(DealTag.name) == data.name.lower()))
+    if tag is None:
+        raise HTTPException(409, "Не удалось создать тег, повторите попытку")
+    link = await db.get(DealTagLink, {"workspace_id": workspace_id, "deal_id": deal_id, "tag_id": tag.id})
+    if link is None:
+        db.add(DealTagLink(workspace_id=workspace_id, deal_id=deal_id, tag_id=tag.id))
+    await db.commit()
+    await db.refresh(tag)
+    return tag
+
+
+@scoped.delete("/deals/{deal_id}/tags/{tag_id}", status_code=204)
+async def remove_deal_tag(deal_id: UUID, tag_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                          db: AsyncSession = Depends(get_db)):
+    await find_deal(db, workspace_id, deal_id)
+    link = await db.get(DealTagLink, {"workspace_id": workspace_id, "deal_id": deal_id, "tag_id": tag_id})
+    if link is None:
+        raise HTTPException(404, "Тег не привязан к сделке")
+    await db.delete(link)
+    await db.commit()
+    return Response(status_code=204)
+
+
+@scoped.get("/deals/{deal_id}/watchers", response_model=list[DealWatcherOut])
+async def deal_watchers(deal_id: UUID, workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    await find_deal(db, workspace_id, deal_id)
+    rows = (await db.execute(select(DealWatcher, User).join(User, User.id == DealWatcher.user_id).where(
+        DealWatcher.workspace_id == workspace_id, DealWatcher.deal_id == deal_id)
+        .order_by(User.first_name, User.email))).all()
+    return [DealWatcherOut(user_id=user.id, first_name=user.first_name, last_name=user.last_name, email=user.email)
+            for _, user in rows]
+
+
+@scoped.post("/deals/{deal_id}/watchers", response_model=DealWatcherOut, status_code=201)
+async def add_deal_watcher(deal_id: UUID, data: DealWatcherCreate, workspace_id: UUID = Depends(workspace_access),
+                           db: AsyncSession = Depends(get_db)):
+    await lock_deal(db, workspace_id, deal_id)
+    await validate_workspace_member(db, workspace_id, data.user_id, "Наблюдателем может стать только активный участник студии")
+    if await db.get(DealWatcher, {"workspace_id": workspace_id, "deal_id": deal_id, "user_id": data.user_id}) is not None:
+        raise HTTPException(409, "Участник уже наблюдает за сделкой")
+    db.add(DealWatcher(workspace_id=workspace_id, deal_id=deal_id, user_id=data.user_id))
+    await db.commit()
+    user = await db.get(User, data.user_id)
+    return DealWatcherOut(user_id=user.id, first_name=user.first_name, last_name=user.last_name, email=user.email)
+
+
+@scoped.delete("/deals/{deal_id}/watchers/{user_id}", status_code=204)
+async def remove_deal_watcher(deal_id: UUID, user_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                              db: AsyncSession = Depends(get_db)):
+    await find_deal(db, workspace_id, deal_id)
+    row = await db.get(DealWatcher, {"workspace_id": workspace_id, "deal_id": deal_id, "user_id": user_id})
+    if row is None:
+        raise HTTPException(404, "Наблюдатель не найден")
+    await db.delete(row)
+    await db.commit()
+    return Response(status_code=204)
+
+
+def contact_link(row: DealContact, contact: Contact) -> DealContactLinkOut:
+    return DealContactLinkOut(contact_id=contact.id, is_primary=row.is_primary, first_name=contact.first_name,
+                              last_name=contact.last_name, middle_name=contact.middle_name,
+                              phone=contact.phone, email=contact.email)
+
+
+@scoped.get("/deals/{deal_id}/contacts", response_model=list[DealContactLinkOut])
+async def deal_contacts(deal_id: UUID, workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    await find_deal(db, workspace_id, deal_id)
+    rows = (await db.execute(select(DealContact, Contact).join(Contact, (Contact.workspace_id == DealContact.workspace_id) &
+        (Contact.id == DealContact.contact_id)).where(DealContact.workspace_id == workspace_id,
+        DealContact.deal_id == deal_id).order_by(DealContact.is_primary.desc(), Contact.first_name))).all()
+    return [contact_link(link, contact) for link, contact in rows]
+
+
+@scoped.post("/deals/{deal_id}/contacts", response_model=DealContactLinkOut, status_code=201)
+async def add_deal_contact(deal_id: UUID, data: DealContactLinkCreate, workspace_id: UUID = Depends(workspace_access),
+                           db: AsyncSession = Depends(get_db)):
+    deal = await lock_deal(db, workspace_id, deal_id)
+    contact = await db.scalar(select(Contact).where(Contact.workspace_id == workspace_id, Contact.id == data.contact_id))
+    if contact is None:
+        raise HTTPException(422, "Контакт должен принадлежать этой студии")
+    existing = await db.get(DealContact, {"workspace_id": workspace_id, "deal_id": deal_id, "contact_id": data.contact_id})
+    if existing is not None:
+        raise HTTPException(409, "Контакт уже связан со сделкой")
+    row = DealContact(workspace_id=workspace_id, deal_id=deal_id, contact_id=data.contact_id, is_primary=False)
+    db.add(row)
+    await db.flush()
+    if data.is_primary or deal.contact_id is None:
+        await assign_primary_contact(db, deal, data.contact_id)
+    await db.commit()
+    await db.refresh(row)
+    return contact_link(row, contact)
+
+
+@scoped.patch("/deals/{deal_id}/contacts/{contact_id}", response_model=DealContactLinkOut)
+async def set_primary_deal_contact(deal_id: UUID, contact_id: UUID, data: DealContactLinkUpdate,
+                                   workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    deal = await lock_deal(db, workspace_id, deal_id)
+    row = await db.get(DealContact, {"workspace_id": workspace_id, "deal_id": deal_id, "contact_id": contact_id})
+    if row is None:
+        raise HTTPException(404, "Контакт не связан со сделкой")
+    contact = await db.scalar(select(Contact).where(Contact.workspace_id == workspace_id, Contact.id == contact_id))
+    if data.is_primary:
+        await assign_primary_contact(db, deal, contact_id)
+    elif row.is_primary:
+        replacement = await replacement_contact(db, deal, contact_id)
+        if replacement is None:
+            raise HTTPException(409, "Единственный контакт должен остаться основным; отвяжите контакт для удаления связи")
+        await assign_primary_contact(db, deal, replacement)
+    await db.commit()
+    await db.refresh(row)
+    return contact_link(row, contact)
+
+
+@scoped.delete("/deals/{deal_id}/contacts/{contact_id}", status_code=204)
+async def remove_deal_contact(deal_id: UUID, contact_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                              db: AsyncSession = Depends(get_db)):
+    deal = await lock_deal(db, workspace_id, deal_id)
+    row = await db.get(DealContact, {"workspace_id": workspace_id, "deal_id": deal_id, "contact_id": contact_id})
+    if row is None:
+        raise HTTPException(404, "Контакт не связан со сделкой")
+    was_primary = row.is_primary
+    await db.delete(row)
+    await db.flush()
+    if was_primary:
+        await assign_primary_contact(db, deal, await replacement_contact(db, deal))
+    await db.commit()
+    return Response(status_code=204)
+
+
+@scoped.get("/deals/{deal_id}/attachments", response_model=list[DealAttachmentOut])
+async def deal_attachments(deal_id: UUID, workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    await find_deal(db, workspace_id, deal_id)
+    return (await db.scalars(select(DealAttachment).where(DealAttachment.workspace_id == workspace_id,
+                                                          DealAttachment.deal_id == deal_id)
+                             .order_by(DealAttachment.created_at.desc()))).all()
+
+
+@scoped.post("/deals/{deal_id}/attachments", response_model=DealAttachmentOut, status_code=201)
+async def add_deal_attachment(deal_id: UUID, data: DealAttachmentCreate, workspace_id: UUID = Depends(workspace_access),
+                              user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    await find_deal(db, workspace_id, deal_id)
+    row = DealAttachment(workspace_id=workspace_id, deal_id=deal_id, filename=data.filename,
+                         content_type=data.content_type, size_bytes=data.size_bytes, uploaded_by_user_id=user.id,
+                         uploaded_by_name=" ".join(filter(None, (user.first_name, user.last_name))))
     db.add(row)
     await db.commit()
     await db.refresh(row)
     return row
+
+
+@scoped.delete("/deals/{deal_id}/attachments/{attachment_id}", status_code=204)
+async def remove_deal_attachment(deal_id: UUID, attachment_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                                 db: AsyncSession = Depends(get_db)):
+    await find_deal(db, workspace_id, deal_id)
+    row = await db.scalar(select(DealAttachment).where(DealAttachment.workspace_id == workspace_id,
+                                                       DealAttachment.deal_id == deal_id,
+                                                       DealAttachment.id == attachment_id))
+    if row is None:
+        raise HTTPException(404, "Вложение не найдено")
+    await db.delete(row)
+    await db.commit()
+    return Response(status_code=204)
+
+
+def parse_custom_field(field: DealCustomField) -> dict:
+    if field.type == "NUMBER":
+        try:
+            number = Decimal(field.value.strip().replace(",", "."))
+        except (InvalidOperation, AttributeError):
+            raise HTTPException(422, f"Поле «{field.key}» должно быть числом")
+        return {"field_type": "NUMBER", "value_number": number, "value_text": None, "value_date": None}
+    if field.type == "DATE":
+        try:
+            day = date.fromisoformat(field.value.strip())
+        except ValueError:
+            raise HTTPException(422, f"Поле «{field.key}» должно быть датой в формате ГГГГ-ММ-ДД")
+        return {"field_type": "DATE", "value_date": day, "value_text": None, "value_number": None}
+    return {"field_type": "TEXT", "value_text": field.value, "value_number": None, "value_date": None}
+
+
+def custom_field_out(row: DealCustomValue) -> DealCustomField:
+    if row.field_type == "NUMBER":
+        value = "" if row.value_number is None else format(row.value_number.normalize(), "f")
+    elif row.field_type == "DATE":
+        value = "" if row.value_date is None else row.value_date.isoformat()
+    else:
+        value = row.value_text or ""
+    return DealCustomField(key=row.field_key, type=row.field_type, value=value)
+
+
+@scoped.get("/deals/{deal_id}/custom-fields", response_model=DealCustomFieldsOut)
+async def deal_custom_fields(deal_id: UUID, workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    await find_deal(db, workspace_id, deal_id)
+    rows = (await db.scalars(select(DealCustomValue).where(DealCustomValue.workspace_id == workspace_id,
+                                                           DealCustomValue.deal_id == deal_id))).all()
+    return {"values": [custom_field_out(row) for row in sorted(rows, key=lambda item: item.field_key.casefold())]}
+
+
+@scoped.put("/deals/{deal_id}/custom-fields", response_model=DealCustomFieldsOut)
+async def save_deal_custom_fields(deal_id: UUID, data: DealCustomFields, workspace_id: UUID = Depends(workspace_access),
+                                  db: AsyncSession = Depends(get_db)):
+    await lock_deal(db, workspace_id, deal_id)
+    parsed = [(field, parse_custom_field(field)) for field in data.values]
+    await db.execute(delete(DealCustomValue).where(DealCustomValue.workspace_id == workspace_id,
+                                                   DealCustomValue.deal_id == deal_id))
+    for field, columns in parsed:
+        db.add(DealCustomValue(workspace_id=workspace_id, deal_id=deal_id, field_key=field.key, **columns))
+    await db.commit()
+    rows = (await db.scalars(select(DealCustomValue).where(DealCustomValue.workspace_id == workspace_id,
+                                                           DealCustomValue.deal_id == deal_id))).all()
+    return {"values": [custom_field_out(row) for row in sorted(rows, key=lambda item: item.field_key.casefold())]}
+
+
+def status_out(row: TaskStatus) -> dict:
+    return {"id": row.id, "name": row.name, "position": row.position, "is_final": row.is_final}
+
+
+@scoped.get("/task-statuses", response_model=list[TaskStatusOut])
+async def task_statuses(workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    rows = await ensure_task_statuses(db, workspace_id)
+    await db.commit()
+    return [status_out(row) for row in rows]
+
+
+@scoped.post("/task-statuses", response_model=TaskStatusOut, status_code=201)
+async def create_task_status(data: TaskStatusCreate, workspace_id: UUID = Depends(workspace_admin),
+                             db: AsyncSession = Depends(get_db)):
+    await ensure_task_statuses(db, workspace_id)
+    if await db.scalar(select(TaskStatus.id).where(TaskStatus.workspace_id == workspace_id,
+                                                   TaskStatus.name == data.name)):
+        raise HTTPException(409, "Статус с таким названием уже есть")
+    position = (await db.scalar(select(func.coalesce(func.max(TaskStatus.position), -1))
+                                .where(TaskStatus.workspace_id == workspace_id))) + 1
+    row = TaskStatus(workspace_id=workspace_id, name=data.name, position=position, is_final=data.is_final)
+    db.add(row)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "Статус с таким названием уже есть")
+    await db.refresh(row)
+    return status_out(row)
+
+
+async def lock_task_status(db: AsyncSession, workspace_id: UUID, status_id: UUID) -> TaskStatus:
+    await db.scalar(select(Workspace).where(Workspace.id == workspace_id).with_for_update())
+    row = await db.scalar(select(TaskStatus).where(TaskStatus.id == status_id,
+                                                   TaskStatus.workspace_id == workspace_id).with_for_update())
+    if row is None:
+        raise HTTPException(404, "Status not found")
+    return row
+
+
+async def final_status_count(db: AsyncSession, workspace_id: UUID) -> int:
+    return await db.scalar(select(func.count()).where(TaskStatus.workspace_id == workspace_id,
+                                                      TaskStatus.is_final.is_(True)))
+
+
+@scoped.patch("/task-statuses/{status_id}", response_model=TaskStatusOut)
+async def update_task_status(status_id: UUID, data: TaskStatusUpdate, workspace_id: UUID = Depends(workspace_admin),
+                             db: AsyncSession = Depends(get_db)):
+    row = await lock_task_status(db, workspace_id, status_id)
+    changes = data.model_dump(exclude_unset=True)
+    if "name" in changes:
+        duplicate = await db.scalar(select(TaskStatus.id).where(TaskStatus.workspace_id == workspace_id,
+                                                                TaskStatus.name == changes["name"],
+                                                                TaskStatus.id != status_id))
+        if duplicate:
+            raise HTTPException(409, "Статус с таким названием уже есть")
+    if changes.get("is_final") is False and row.is_final and await final_status_count(db, workspace_id) <= 1:
+        raise HTTPException(409, "В рабочем процессе должен остаться завершающий статус")
+    if "is_final" in changes and changes["is_final"] != row.is_final and await db.scalar(
+            select(Task.id).where(Task.workspace_id == workspace_id, Task.status_id == status_id).limit(1)):
+        raise HTTPException(409, "Нельзя менять признак завершения статуса с задачами; сначала перенесите задачи")
+    for name, value in changes.items():
+        setattr(row, name, value)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "Статус с таким названием уже есть")
+    await db.refresh(row)
+    return status_out(row)
+
+
+@scoped.put("/task-statuses/order", response_model=list[TaskStatusOut])
+async def reorder_task_statuses(data: TaskStatusOrder, workspace_id: UUID = Depends(workspace_admin),
+                                db: AsyncSession = Depends(get_db)):
+    await db.scalar(select(Workspace).where(Workspace.id == workspace_id).with_for_update())
+    rows = (await db.scalars(select(TaskStatus).where(TaskStatus.workspace_id == workspace_id)
+                             .with_for_update())).all()
+    if set(data.ids) != {row.id for row in rows}:
+        raise HTTPException(422, "Нужно перечислить все статусы студии")
+    by_id = {row.id: row for row in rows}
+    for position, status_id in enumerate(data.ids):
+        by_id[status_id].position = position
+    await db.commit()
+    return [status_out(row) for row in await ensure_task_statuses(db, workspace_id)]
+
+
+@scoped.delete("/task-statuses/{status_id}", status_code=204)
+async def delete_task_status(status_id: UUID, workspace_id: UUID = Depends(workspace_admin),
+                             db: AsyncSession = Depends(get_db)):
+    row = await lock_task_status(db, workspace_id, status_id)
+    if await db.scalar(select(Task.id).where(Task.workspace_id == workspace_id,
+                                             Task.status_id == status_id).limit(1)):
+        raise HTTPException(409, "Статус с задачами удалить нельзя")
+    if row.is_final and await final_status_count(db, workspace_id) <= 1:
+        raise HTTPException(409, "В рабочем процессе должен остаться завершающий статус")
+    await db.delete(row)
+    await db.commit()
+    return Response(status_code=204)
+
+
+async def find_task(db: AsyncSession, workspace_id: UUID, task_id: UUID, lock: bool = False) -> tuple[Task, TaskStatus]:
+    if lock:
+        await lock_workspace(db, workspace_id)
+    query = select(Task, TaskStatus).join(TaskStatus, (TaskStatus.workspace_id == Task.workspace_id) &
+        (TaskStatus.id == Task.status_id)).where(Task.id == task_id, Task.workspace_id == workspace_id)
+    result = (await db.execute(query.with_for_update(of=Task) if lock else query)).first()
+    if result is None:
+        raise HTTPException(404, "Task not found")
+    return result[0], result[1]
+
+
+async def checklist_counts(db: AsyncSession, task: Task) -> tuple[int, int]:
+    total = await db.scalar(select(func.count()).where(TaskChecklistItem.workspace_id == task.workspace_id,
+                                                       TaskChecklistItem.task_id == task.id))
+    done = await db.scalar(select(func.count()).where(TaskChecklistItem.workspace_id == task.workspace_id,
+                                                      TaskChecklistItem.task_id == task.id,
+                                                      TaskChecklistItem.is_done.is_(True)))
+    return done or 0, total or 0
+
+
+async def validate_task_status(db: AsyncSession, workspace_id: UUID, status_id: UUID) -> TaskStatus:
+    row = await db.scalar(select(TaskStatus).where(TaskStatus.id == status_id,
+                                                   TaskStatus.workspace_id == workspace_id))
+    if row is None:
+        raise HTTPException(422, "Статус должен принадлежать этой студии")
+    return row
+
+
+async def validate_task_links(db: AsyncSession, workspace_id: UUID, deal_id: UUID | None, project_id: UUID | None,
+                              contact_id: UUID | None, parent_task_id: UUID | None, task_id: UUID | None = None):
+    if deal_id is not None:
+        await find_deal(db, workspace_id, deal_id)
+    if project_id is not None:
+        project = await db.scalar(select(Project).where(Project.workspace_id == workspace_id,
+                                                       Project.id == project_id))
+        if project is None:
+            raise HTTPException(422, "Проект должен принадлежать этой студии")
+        if project.status == "ARCHIVED":
+            raise HTTPException(422, "Нельзя добавить задачу в архивный проект")
+    if contact_id is not None:
+        contact = await db.scalar(select(Contact.id).where(Contact.workspace_id == workspace_id,
+                                                           Contact.id == contact_id))
+        if contact is None:
+            raise HTTPException(422, "Контакт должен принадлежать этой студии")
+    if parent_task_id is not None:
+        if parent_task_id == task_id:
+            raise HTTPException(422, "Задача не может быть родителем самой себе")
+        parent = await db.scalar(select(Task).where(Task.workspace_id == workspace_id, Task.id == parent_task_id))
+        if parent is None:
+            raise HTTPException(422, "Родительская задача не найдена в этой студии")
+        if parent.parent_task_id is not None:
+            raise HTTPException(422, "Подзадачи допускаются только на одном уровне вложенности")
+
+
+@scoped.get("/tasks", response_model=list[TaskOut])
+async def workspace_tasks(workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db),
+                          deal_id: UUID | None = None, project_id: UUID | None = None, contact_id: UUID | None = None,
+                          status_id: UUID | None = None, assignee_user_id: UUID | None = None, parent_task_id: UUID | None = None,
+                          include_done: bool = True, limit: int = Query(200, ge=1, le=500),
+                          offset: int = Query(0, ge=0)):
+    conditions = []
+    for column, value in ((Task.deal_id, deal_id), (Task.project_id, project_id), (Task.contact_id, contact_id),
+                          (Task.status_id, status_id), (Task.assignee_user_id, assignee_user_id),
+                          (Task.parent_task_id, parent_task_id)):
+        if value is not None:
+            conditions.append(column == value)
+    if not include_done:
+        conditions.append(TaskStatus.is_final.is_(False))
+    rows = await task_rows(db, workspace_id, *conditions, limit=limit, offset=offset)
+    return [task_out(task, status, done, total) for task, status, done, total in rows]
+
+
+@scoped.post("/tasks", response_model=TaskOut, status_code=201)
+async def create_task(data: TaskCreate, workspace_id: UUID = Depends(workspace_access),
+                      user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    await validate_responsible(db, workspace_id, data.assignee_user_id)
+    await validate_task_links(db, workspace_id, data.deal_id, data.project_id, data.contact_id, data.parent_task_id)
+    status = await validate_task_status(db, workspace_id, data.status_id) if data.status_id else await default_open_status(db, workspace_id)
+    values = data.model_dump(exclude={"status_id"})
+    row = Task(workspace_id=workspace_id, status_id=status.id, creator_user_id=user.id, **values)
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return task_out(row, status)
+
+
+@scoped.get("/tasks/{task_id}", response_model=TaskOut)
+async def get_task(task_id: UUID, workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    task, status = await find_task(db, workspace_id, task_id)
+    done, total = await checklist_counts(db, task)
+    return task_out(task, status, done, total)
+
+
+@scoped.patch("/tasks/{task_id}", response_model=TaskOut)
+async def update_task(task_id: UUID, data: TaskUpdate, workspace_id: UUID = Depends(workspace_access),
+                      user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    task, status = await find_task(db, workspace_id, task_id, lock=True)
+    changes = data.model_dump(exclude_unset=True)
+    completed_now = False
+    start_at = changes.get("start_at", task.start_at)
+    due_at = changes.get("due_at", task.due_at)
+    if start_at and due_at and start_at > due_at:
+        raise HTTPException(422, "Дата начала задачи не может быть позже крайнего срока")
+    if "assignee_user_id" in changes:
+        await validate_responsible(db, workspace_id, changes["assignee_user_id"])
+    if {"deal_id", "project_id", "contact_id", "parent_task_id"} & changes.keys():
+        await validate_task_links(db, workspace_id, changes.get("deal_id", task.deal_id),
+                                  changes.get("project_id", task.project_id),
+                                  changes.get("contact_id", task.contact_id),
+                                  changes.get("parent_task_id", task.parent_task_id), task_id)
+    if changes.get("status_id") is not None:
+        target = await validate_task_status(db, workspace_id, changes["status_id"])
+        if target.id != task.status_id:
+            apply_task_status(task, target, user)
+            completed_now = target.is_final
+            status = target
+        changes.pop("status_id")
+    if "parent_task_id" in changes and changes["parent_task_id"] is not None:
+        children = await db.scalar(select(Task.id).where(Task.workspace_id == workspace_id,
+                                                         Task.parent_task_id == task_id).limit(1))
+        if children:
+            raise HTTPException(422, "У задачи с подзадачами нельзя менять родителя")
+    for name, value in changes.items():
+        setattr(task, name, value)
+    if completed_now:
+        await stop_timers(db, workspace_id, task_id=task.id, reason="TASK_COMPLETED")
+        await repeat_completed_task(db, task, user)
+        await emit_event(db, workspace_id, 'task.completed', task.id)
+    await db.commit()
+    await db.refresh(task)
+    done, total = await checklist_counts(db, task)
+    return task_out(task, status, done, total)
+
+
+@scoped.delete("/tasks/{task_id}", status_code=204)
+async def delete_task(task_id: UUID, workspace_id: UUID = Depends(workspace_admin), db: AsyncSession = Depends(get_db)):
+    task, _ = await find_task(db, workspace_id, task_id)
+    await db.delete(task)
+    await db.commit()
+    return Response(status_code=204)
+
+
+@scoped.get("/tasks/{task_id}/checklist", response_model=list[TaskChecklistItemOut])
+async def task_checklist(task_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                         db: AsyncSession = Depends(get_db)):
+    await find_task(db, workspace_id, task_id)
+    return (await db.scalars(select(TaskChecklistItem).where(TaskChecklistItem.workspace_id == workspace_id,
+                                                             TaskChecklistItem.task_id == task_id)
+                             .order_by(TaskChecklistItem.position, TaskChecklistItem.created_at))).all()
+
+
+@scoped.post("/tasks/{task_id}/checklist", response_model=TaskChecklistItemOut, status_code=201)
+async def add_checklist_item(task_id: UUID, data: TaskChecklistItemCreate,
+                             workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    await find_task(db, workspace_id, task_id)
+    position = (await db.scalar(select(func.coalesce(func.max(TaskChecklistItem.position), -1))
+                                .where(TaskChecklistItem.workspace_id == workspace_id,
+                                       TaskChecklistItem.task_id == task_id))) + 1
+    row = TaskChecklistItem(workspace_id=workspace_id, task_id=task_id, text=data.text, position=position)
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+async def find_checklist_item(db: AsyncSession, workspace_id: UUID, task_id: UUID, item_id: UUID) -> TaskChecklistItem:
+    row = await db.scalar(select(TaskChecklistItem).where(TaskChecklistItem.id == item_id,
+                                                          TaskChecklistItem.workspace_id == workspace_id,
+                                                          TaskChecklistItem.task_id == task_id))
+    if row is None:
+        raise HTTPException(404, "Checklist item not found")
+    return row
+
+
+@scoped.patch("/tasks/{task_id}/checklist/{item_id}", response_model=TaskChecklistItemOut)
+async def update_checklist_item(task_id: UUID, item_id: UUID, data: TaskChecklistItemUpdate,
+                                workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    await find_task(db, workspace_id, task_id)
+    row = await find_checklist_item(db, workspace_id, task_id, item_id)
+    for name, value in data.model_dump(exclude_unset=True).items():
+        setattr(row, name, value)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+@scoped.delete("/tasks/{task_id}/checklist/{item_id}", status_code=204)
+async def delete_checklist_item(task_id: UUID, item_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                                db: AsyncSession = Depends(get_db)):
+    await find_task(db, workspace_id, task_id)
+    await db.delete(await find_checklist_item(db, workspace_id, task_id, item_id))
+    await db.commit()
+    return Response(status_code=204)
+
+
+@scoped.get("/tasks/{task_id}/watchers", response_model=list[DealWatcherOut])
+async def task_watchers(task_id: UUID, workspace_id: UUID = Depends(workspace_access), db: AsyncSession = Depends(get_db)):
+    await find_task(db, workspace_id, task_id)
+    rows = (await db.execute(select(TaskWatcher, User).join(User, User.id == TaskWatcher.user_id).where(
+        TaskWatcher.workspace_id == workspace_id, TaskWatcher.task_id == task_id)
+        .order_by(User.first_name, User.email))).all()
+    return [DealWatcherOut(user_id=user.id, first_name=user.first_name, last_name=user.last_name, email=user.email)
+            for _, user in rows]
+
+
+@scoped.post("/tasks/{task_id}/watchers", response_model=DealWatcherOut, status_code=201)
+async def add_task_watcher(task_id: UUID, data: DealWatcherCreate, workspace_id: UUID = Depends(workspace_access),
+                           db: AsyncSession = Depends(get_db)):
+    await find_task(db, workspace_id, task_id, lock=True)
+    await validate_workspace_member(db, workspace_id, data.user_id, "Наблюдателем может стать только активный участник студии")
+    if await db.get(TaskWatcher, {"workspace_id": workspace_id, "task_id": task_id, "user_id": data.user_id}) is not None:
+        raise HTTPException(409, "Участник уже наблюдает за задачей")
+    db.add(TaskWatcher(workspace_id=workspace_id, task_id=task_id, user_id=data.user_id))
+    await db.commit()
+    user = await db.get(User, data.user_id)
+    return DealWatcherOut(user_id=user.id, first_name=user.first_name, last_name=user.last_name, email=user.email)
+
+
+@scoped.delete("/tasks/{task_id}/watchers/{user_id}", status_code=204)
+async def remove_task_watcher(task_id: UUID, user_id: UUID, workspace_id: UUID = Depends(workspace_access),
+                              db: AsyncSession = Depends(get_db)):
+    await find_task(db, workspace_id, task_id)
+    row = await db.get(TaskWatcher, {"workspace_id": workspace_id, "task_id": task_id, "user_id": user_id})
+    if row is None:
+        raise HTTPException(404, "Наблюдатель не найден")
+    await db.delete(row)
+    await db.commit()
+    return Response(status_code=204)
 
 
 router.include_router(scoped)
