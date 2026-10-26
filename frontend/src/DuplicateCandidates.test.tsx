@@ -33,3 +33,20 @@ it('clears failed results and retries the same source', async () => {
   fail = false; fireEvent.click(screen.getByRole('button', {name: 'Повторить проверку дублей'}));
   expect(await screen.findByText('По этим правилам совпадений нет.')).toBeTruthy();
 });
+
+it('offers an explicit merge preview for both types only when allowed', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({source: {id: 'c1', label: 'Основная'}, total: 1,
+    items: [{id: 'c2', label: 'Дубль', reasons: ['email']}]}))));
+  const onMerge = vi.fn();
+  const view = render(<DuplicateCandidates base="/workspaces/w1" kind="client" objectId="c1" onOpen={vi.fn()} onClose={vi.fn()} onMerge={onMerge}/>);
+  fireEvent.click(await screen.findByRole('button', {name: 'Слияние: Дубль'}));
+  expect(onMerge).toHaveBeenCalledWith('c2', 'c1');
+  view.unmount();
+  const contactView = render(<DuplicateCandidates base="/workspaces/w1" kind="contact" objectId="c1" onOpen={vi.fn()} onClose={vi.fn()} onMerge={onMerge}/>);
+  fireEvent.click(await screen.findByRole('button', {name: 'Слияние: Дубль'}));
+  expect(onMerge).toHaveBeenCalledTimes(2);
+  contactView.unmount();
+  render(<DuplicateCandidates base="/workspaces/w1" kind="contact" objectId="c1" onOpen={vi.fn()} onClose={vi.fn()}/>);
+  await screen.findByRole('button', {name: 'Сравнить: Дубль'});
+  expect(screen.queryByRole('button', {name: 'Слияние: Дубль'})).toBeNull();
+});

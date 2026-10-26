@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import current_user, workspace_admin
 from app.api.v1.crm import assign_primary_contact, lock_workspace
 from app.api.v1.schemas import Money, Name, Output
+from app.api.v1.website_lead_schemas import UTM_FIELDS, WebsiteContext, WebsiteLeadInput
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.http import read_limited_body
@@ -24,6 +25,7 @@ from app.models.entities import StageType
 from app.models.integrations import IncomingLead, IntegrationToken
 from app.services.webhooks import emit_event
 from app.services.audit import audit_deal
+from app.services.group_permissions import enforce_token_blocks
 
 router = APIRouter(tags=["Incoming leads"])
 bearer = HTTPBearer(auto_error=False)
@@ -77,6 +79,7 @@ class LeadOut(Output):
     deal_id: UUID | None
     created_at: datetime
     replayed: bool = False
+    website_context: WebsiteContext | None = None
 
 
 async def admin_locked(db, workspace_id, user_id):
@@ -150,6 +153,7 @@ async def lead_token(credentials: HTTPAuthorizationCredentials | None = Depends(
         .with_for_update(of=IntegrationToken).execution_options(populate_existing=True))
     if row is None:
         raise invalid
+    await enforce_token_blocks(db, row)
     return row
 
 
@@ -163,8 +167,33 @@ async def incoming_lead(request: Request, response: Response, token: Integration
         data = LeadInput.model_validate_json(raw)
     except ValidationError:
         raise HTTPException(422, "Некорректная заявка: проверьте обязательные поля, UUID, email, сумму и длины строк")
+    return await accept_lead(data, response, token, db)
+
+
+@router.post('/integrations/website-leads', response_model=LeadOut, status_code=201,
+    openapi_extra={'requestBody': {'required': True, 'content': {'application/json': {'schema': WebsiteLeadInput.model_json_schema()}}}})
+async def website_lead(request: Request, response: Response, token: IntegrationToken = Depends(lead_token), db: AsyncSession = Depends(get_db)):
+    if request.headers.get('content-type', '').split(';', 1)[0].lower() != 'application/json':
+        raise HTTPException(415, 'Требуется application/json')
+    raw = await read_limited_body(request, 64 * 1024)
+    try:
+        website = WebsiteLeadInput.model_validate_json(raw)
+        data = LeadInput(**website.lead_fields())
+    except ValidationError:
+        # Never echo PII, injected HTML, URL credentials or secrets from validation input.
+        raise HTTPException(422, 'Некорректная заявка сайта: проверьте UUID, форму, контакты, URL, время и согласия') from None
+    return await accept_lead(data, response, token, db, website.context())
+
+
+async def accept_lead(data: LeadInput, response: Response, token: IntegrationToken, db: AsyncSession,
+                      website: WebsiteContext | None = None):
+    """Caller holds the workspace/token lock; all CRM and receipt writes share one commit."""
     normalized = data.model_dump(mode="json")
     normalized["amount"] = str(data.amount.quantize(Decimal("0.01")))
+    # Keep the legacy endpoint's exact digest for already accepted historical requests.
+    context = website.model_dump(mode='json') if website else None
+    if context is not None:
+        normalized['_website_context'] = context
     digest = hashlib.sha256(json.dumps(normalized, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
     receipt = await db.scalar(select(IncomingLead).where(IncomingLead.workspace_id == token.workspace_id, IncomingLead.request_key == data.request_key))
     if receipt is not None:
@@ -187,11 +216,15 @@ async def incoming_lead(request: Request, response: Response, token: Integration
     if token.hour_count >= settings.integration_lead_hour_limit:
         raise HTTPException(429, "Превышен часовой лимит заявок токена", headers={"Retry-After": "3600"})
     client = Client(workspace_id=token.workspace_id, name=data.company_name, phone=data.phone, email=data.email)
+    if website:
+        client.type, client.website = website.client_type, website.website
     db.add(client)
     await db.flush()
     contact = None
     if data.contact_first_name:
         contact = Contact(workspace_id=token.workspace_id, first_name=data.contact_first_name, phone=data.phone, email=data.email)
+        if website:
+            contact.website = website.website
         db.add(contact)
         await db.flush()
         db.add(ContactClient(workspace_id=token.workspace_id, contact_id=contact.id, client_id=client.id))
@@ -199,6 +232,9 @@ async def incoming_lead(request: Request, response: Response, token: Integration
     deal = Deal(workspace_id=token.workspace_id, title=data.title, client_id=client.id, pipeline_id=pipeline.id,
         stage_id=stage.id, amount=data.amount, currency=workspace.currency, source=data.source, description=data.message,
         responsible_user_id=token.created_by_user_id)
+    if website:
+        for field in UTM_FIELDS:
+            setattr(deal, field, getattr(website, field))
     db.add(deal)
     await db.flush()
     if contact:
@@ -208,7 +244,7 @@ async def incoming_lead(request: Request, response: Response, token: Integration
     db.add(DealActivity(workspace_id=token.workspace_id, deal_id=deal.id, author_user_id=token.created_by_user_id,
         author_name=("Интеграция: " + token.name)[:255], kind="EVENT", body="Принята входящая заявка с источником «" + data.source + "»"))
     receipt = IncomingLead(workspace_id=token.workspace_id, request_key=data.request_key, request_digest=digest,
-        token_id=token.id, client_id=client.id, deal_id=deal.id)
+        token_id=token.id, client_id=client.id, deal_id=deal.id, website_context=context)
     db.add(receipt)
     token.hour_count += 1
     token.last_used_at = now
@@ -224,4 +260,4 @@ async def lead_journal(workspace_id: UUID = Depends(workspace_admin), db: AsyncS
         (Deal.workspace_id == IncomingLead.workspace_id) & (Deal.id == IncomingLead.deal_id))
         .where(IncomingLead.workspace_id == workspace_id).order_by(IncomingLead.created_at.desc(), IncomingLead.id.desc())
         .limit(limit).offset(offset))).all()
-    return [{**LeadOut.model_validate(row).model_dump(), "deal_title": title} for row, title in rows]
+    return [{**LeadOut.model_validate(row).model_dump(mode='json'), "deal_title": title} for row, title in rows]

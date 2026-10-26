@@ -16,6 +16,9 @@ from app.api.v1.exports import router as exports_router
 from app.api.v1.search import router as search_router
 from app.api.v1.audit import router as audit_router
 from app.api.v1.duplicates import router as duplicates_router
+from app.api.v1.client_merges import router as client_merges_router
+from app.api.v1.contact_merges import router as contact_merges_router
+from app.api.v1.groups import router as groups_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.workspaces import router as workspace_router
 from starlette.responses import JSONResponse
@@ -39,6 +42,9 @@ app.include_router(exports_router, prefix="/api/v1")
 app.include_router(search_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1")
 app.include_router(duplicates_router, prefix="/api/v1")
+app.include_router(client_merges_router, prefix="/api/v1")
+app.include_router(contact_merges_router, prefix="/api/v1")
+app.include_router(groups_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(workspace_router, prefix="/api/v1")
 

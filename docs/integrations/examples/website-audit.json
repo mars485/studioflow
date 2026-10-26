@@ -1,0 +1,17 @@
+{
+  "request_key": "e35e36c0-7fdb-4a23-a13d-e73fbf0b1a2c",
+  "form_kind": "audit",
+  "name": "Тестовый посетитель",
+  "contact": "@synthetic_contact",
+  "email": "synthetic@example.com",
+  "website": "https://customer.example/",
+  "message": "Синтетический пример, не отправлять на рабочую форму",
+  "source_url": "https://itgsystem.ru/audit",
+  "submitted_at": "2026-10-26T09:00:00Z",
+  "privacy_consent": true,
+  "audit_email_consent": true,
+  "policy_version": "example-only-replace-with-real-version",
+  "utm_source": "example",
+  "utm_medium": "test",
+  "utm_campaign": "isolated-intake-check"
+}

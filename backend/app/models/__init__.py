@@ -10,9 +10,13 @@ from app.models.task_time import TaskTimeEntry
 from app.models.task_recurrence import TaskRecurrence
 from app.models.webhooks import WebhookDelivery, WebhookSubscription
 from app.models.audit import DealAudit
+from app.models.client_merges import ClientMerge
+from app.models.contact_merges import ContactMerge
+from app.models.groups import EmployeeGroup, EmployeeGroupMember, EmployeeGroupBlock, GroupAudit
 
 __all__ = ["User", "Workspace", "WorkspaceMember", "Client", "Contact", "ContactClient", "Pipeline", "PipelineStage", "Deal", "DealActivity",
            "TaskReminder", "FollowUpCompletion", "DealTag", "DealTagLink", "DealWatcher", "DealContact", "DealAttachment", "DealCustomValue",
            "Task", "TaskStatus", "TaskChecklistItem", "TaskWatcher", "Project", "ProjectStage", "ProjectMember", "ProjectContact", "ProjectEvent",
            "Organization", "FinanceCounter", "Invoice", "InvoicePayment", "Act", "DealAttachmentContent", "Notification", "ProjectWorkStage", "ProjectTemplate",
-           "IntegrationToken", "IncomingLead", "TaskTimeEntry", "TaskRecurrence", "WebhookSubscription", "WebhookDelivery", "DealAudit"]
+           "IntegrationToken", "IncomingLead", "TaskTimeEntry", "TaskRecurrence", "WebhookSubscription", "WebhookDelivery", "DealAudit", "ClientMerge", "ContactMerge",
+           "EmployeeGroup", "EmployeeGroupMember", "EmployeeGroupBlock", "GroupAudit"]

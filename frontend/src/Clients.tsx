@@ -4,6 +4,7 @@ import ClientDirectory from './ClientDirectory';
 import ContactDirectory from './ContactDirectory';
 import CsvExport from './CsvExport';
 import DuplicateCandidates from './DuplicateCandidates';
+import CompanyMerge from './CompanyMerge';
 
 type InitialTarget = {kind: 'client' | 'contact'; id: string};
 function WorkspaceClients({workspace, onOpenDeal, onModalChange, initialTarget}: {workspace: Workspace; onOpenDeal: (workspaceId: string, dealId: string) => void; onModalChange: (open: boolean) => void; initialTarget?: InitialTarget}) {
@@ -19,7 +20,8 @@ function WorkspaceClients({workspace, onOpenDeal, onModalChange, initialTarget}:
   const [retry, setRetry] = useState(0);
   const targetOpened = useRef(false);
   const [duplicateTarget, setDuplicateTarget] = useState<InitialTarget | null>(null);
-  useEffect(() => {onModalChange(!!companyId || !!contact);}, [companyId, contact, onModalChange]);
+  const [mergePair, setMergePair] = useState<{sourceId: string; targetId: string; kind: 'client' | 'contact'} | null>(null);
+  useEffect(() => {onModalChange(!!companyId || !!contact || !!mergePair);}, [companyId, contact, mergePair, onModalChange]);
   useEffect(() => () => onModalChange(false), [onModalChange]);
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError('');
@@ -66,7 +68,10 @@ function WorkspaceClients({workspace, onOpenDeal, onModalChange, initialTarget}:
             <button type="button" aria-label={`Проверить дубли: ${contactName(row)}`} onClick={() => setDuplicateTarget({kind: 'contact', id: row.id})}>Проверить дубли</button></td></tr>)}</tbody></table></div>}
     </>)}
     {error && <p role="alert" className="errorMessage">{error} <button onClick={() => setRetry(n => n + 1)}>Повторить</button></p>}
+    {mergePair && <CompanyMerge key={`${mergePair.sourceId}:${mergePair.targetId}`} base={base} {...mergePair}
+      onClose={() => setMergePair(null)} onMerged={async () => {await refresh();}}/>}
     {duplicateTarget && <DuplicateCandidates key={`${duplicateTarget.kind}:${duplicateTarget.id}`} base={base} kind={duplicateTarget.kind} objectId={duplicateTarget.id}
+      onMerge={canDelete ? (sourceId, targetId) => {setDuplicateTarget(null); setMergePair({sourceId, targetId, kind: duplicateTarget.kind});} : undefined}
       onClose={() => setDuplicateTarget(null)} onOpen={async id => {
         // Re-read the exact candidate: it may be new or deleted since this directory loaded.
         if (duplicateTarget.kind === 'client') {

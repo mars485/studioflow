@@ -9,6 +9,7 @@ from app.core.security import COOKIE, token_digest
 from app.models.entities import AuthSession
 from app.core.database import get_db
 from app.models import User, WorkspaceMember
+from app.services.group_permissions import enforce_request_blocks
 
 
 async def current_user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
@@ -24,6 +25,7 @@ async def current_user(request: Request, db: AsyncSession = Depends(get_db)) -> 
 
 
 async def workspace_member(
+    request: Request,
     workspace_id: UUID,
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
@@ -34,6 +36,7 @@ async def workspace_member(
     ))
     if member is None:
         raise HTTPException(404, "Workspace not found")
+    await enforce_request_blocks(request, member, db)
     return member
 
 

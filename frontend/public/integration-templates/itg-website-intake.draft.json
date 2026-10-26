@@ -1,0 +1,102 @@
+{
+  "name": "StudioFlow - ITG website intake (DRAFT - configure before activation)",
+  "active": false,
+  "nodes": [
+    {
+      "id": "itg-website-source",
+      "name": "Authenticated website envelope",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "itg-studioflow-website-v1",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURE_ITG_SOURCE_HEADER_CREDENTIAL",
+          "name": "Configure ITG source webhook header credential"
+        }
+      }
+    },
+    {
+      "id": "studioflow-website-intake",
+      "name": "Accept in isolated StudioFlow workspace",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 300],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "parameters": {
+        "method": "POST",
+        "url": "https://studioflow.invalid/api/v1/integrations/website-leads",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "X-StudioFlow-Request", "value": "1"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {
+          "timeout": 10000,
+          "redirect": {"redirect": {"followRedirects": false}}
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURE_STUDIOFLOW_LEAD_CREDENTIAL",
+          "name": "Configure isolated StudioFlow leads:create Authorization header"
+        }
+      }
+    },
+    {
+      "id": "validate-studioflow-receipt",
+      "name": "Validate and minimize CRM receipt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [760, 300],
+      "parameters": {
+        "jsCode": "const sourceKey = $('Authenticated website envelope').first().json.body.request_key;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nreturn $input.all().map(({json: receipt}) => {\n  if (!receipt || typeof sourceKey !== 'string' || !uuid.test(sourceKey) || typeof receipt.id !== 'string' || !uuid.test(receipt.id) || typeof receipt.request_key !== 'string' || receipt.request_key.toLowerCase() !== sourceKey.toLowerCase() || typeof receipt.replayed !== 'boolean') {\n    throw new Error('Invalid StudioFlow receipt; keep the source envelope for retry');\n  }\n  return {json: {id: receipt.id, request_key: receipt.request_key, replayed: receipt.replayed}};\n});"
+      }
+    },
+    {
+      "id": "itg-source-receipt",
+      "name": "Acknowledge durable CRM receipt only",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [1000, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, receipt_id: $json.id, request_key: $json.request_key, replayed: $json.replayed } }}",
+        "options": {"responseCode": 200}
+      }
+    }
+  ],
+  "connections": {
+    "Authenticated website envelope": {
+      "main": [[{"node": "Accept in isolated StudioFlow workspace", "type": "main", "index": 0}]]
+    },
+    "Accept in isolated StudioFlow workspace": {
+      "main": [[{"node": "Validate and minimize CRM receipt", "type": "main", "index": 0}]]
+    },
+    "Validate and minimize CRM receipt": {
+      "main": [[{"node": "Acknowledge durable CRM receipt only", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false
+  },
+  "pinData": {}
+}

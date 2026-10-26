@@ -14,6 +14,7 @@ from app.models import Deal, Pipeline, PipelineStage, Task, TaskReminder, User, 
 from app.models import Project, ProjectMember
 from app.models.project_work import ProjectWorkStage
 from app.services.task_time import stop_timers
+from app.services.group_permissions import blocked_actions
 from app.models.entities import StageType
 
 router = APIRouter(prefix="/workspaces", tags=["Workspaces"])
@@ -163,6 +164,9 @@ async def remove_member(member_id: uuid.UUID, workspace_id: uuid.UUID = Depends(
     actor = await lock_membership(db, workspace_id, user.id)
     member = await member_to_change(db, workspace_id, member_id, None)
     authorize_role(actor, member.role, None)
+    # Otherwise ADMIN could remove/re-add a restricted manager to erase OWNER's group policy.
+    if actor.role != 'OWNER' and await blocked_actions(db, workspace_id, member.user_id):
+        raise HTTPException(403, 'Участника с групповыми ограничениями может удалить только владелец')
     await stop_timers(db, workspace_id, user_id=member.user_id, reason="MEMBERSHIP_REVOKED")
     await db.execute(update(Deal).where(Deal.workspace_id == workspace_id,
                                         Deal.responsible_user_id == member.user_id).values(responsible_user_id=None))

@@ -1,6 +1,7 @@
 import {useEffect, useState, type FormEvent} from 'react';
 import {X} from 'lucide-react';
 import {type Client, type Contact, type Deal, contactName, errorText, money, request} from './api';
+import ClientMergeHistory from './ClientMergeHistory';
 
 type Draft = {first_name: string; last_name: string; middle_name: string; phone: string;
   email: string; website: string; notes: string; client_ids: string[]};
@@ -72,6 +73,7 @@ function ContactEditor({contact, contacts, clients, base, canDelete, initialClie
       {loading ? <p role="status">Загрузка сделок…</p> : dealError ? <p role="alert">{dealError} <button type="button" onClick={() => setReload(n => n + 1)}>Повторить</button></p> :
         deals.length ? <ul>{deals.map(deal => <li key={deal.id}><button type="button" onClick={() => onOpenDeal(deal.id)}>{deal.title}</button><span>{money(deal.amount, deal.currency)}</span></li>)}</ul> : <p className="muted">Сделок пока нет.</p>}
     </section>}
+    {contact && canDelete && <ClientMergeHistory base={base} targetId={contact.id} kind="contact"/>}
   </div>;
 }
 

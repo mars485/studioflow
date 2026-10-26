@@ -1,0 +1,6 @@
+.employeeGroups{min-width:0;overflow-wrap:anywhere}
+.employeeGroups>button{margin:4px 8px 4px 0}
+.employeeGroups form>fieldset{min-width:0;display:grid;gap:12px;margin:16px 0}
+.employeeGroups fieldset fieldset{min-width:0;display:grid;gap:8px}
+.employeeGroups label.groupCheck{display:flex;align-items:flex-start;gap:10px;overflow-wrap:anywhere}
+.employeeGroups .groupCheck input{flex:none}

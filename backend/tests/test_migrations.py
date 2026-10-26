@@ -69,8 +69,61 @@ def test_upgrade_preserves_existing_deal_and_seed_is_idempotent():
             INSERT INTO deal_contacts (workspace_id, deal_id, contact_id, is_primary)
             SELECT workspace_id, id, '{chosen_contact_id}', true FROM deals WHERE id = '{deal_id}';
         """))
+        command("alembic", "upgrade", "0028")
+        historical_receipt = uuid4()
+        asyncio.run(execute(target, f"""
+            INSERT INTO incoming_leads (id, workspace_id, request_key, request_digest, client_id, deal_id)
+            SELECT '{historical_receipt}', workspace_id, '{uuid4()}', repeat('c',64), '{client_id}', id
+            FROM deals WHERE id = '{deal_id}';
+        """))
         command("alembic", "upgrade", "head")
         command("alembic", "check")
+        receipt = asyncio.run(execute(target, f"SELECT website_context, request_digest FROM incoming_leads WHERE id = '{historical_receipt}'"))[0]
+        assert receipt['website_context'] is None and receipt['request_digest'] == 'c' * 64
+        asyncio.run(execute(target, f"UPDATE incoming_leads SET website_context = '{{\"form_kind\":\"audit\"}}'::jsonb WHERE id = '{historical_receipt}'"))
+        command("alembic", "downgrade", "0028")
+        assert len(asyncio.run(execute(target, f"SELECT id FROM incoming_leads WHERE id = '{historical_receipt}'"))) == 1
+        assert len(asyncio.run(execute(target, f"SELECT id FROM deals WHERE id = '{deal_id}'"))) == 1
+        command("alembic", "upgrade", "head")
+        assert asyncio.run(execute(target, f"SELECT website_context FROM incoming_leads WHERE id = '{historical_receipt}'"))[0]['website_context'] is None
+        assert len(asyncio.run(execute(target, "SELECT id FROM employee_groups"))) == 0
+        group_id = uuid4()
+        asyncio.run(execute(target, f"""
+            INSERT INTO employee_groups (id, workspace_id, name)
+            SELECT '{group_id}', workspace_id, 'Migration group' FROM workspace_members LIMIT 1;
+            INSERT INTO employee_group_members (workspace_id, group_id, user_id)
+            SELECT workspace_id, '{group_id}', user_id FROM workspace_members LIMIT 1;
+            INSERT INTO employee_group_blocks (workspace_id, group_id, action)
+            SELECT workspace_id, '{group_id}', 'tasks.write' FROM workspace_members LIMIT 1;
+        """))
+        command("alembic", "downgrade", "0027")
+        assert len(asyncio.run(execute(target, f"SELECT id FROM deals WHERE id = '{deal_id}'"))) == 1
+        assert len(asyncio.run(execute(target, "SELECT user_id FROM workspace_members"))) == 1
+        command("alembic", "upgrade", "head")
+        assert len(asyncio.run(execute(target, "SELECT id FROM employee_groups"))) == 0
+        assert len(asyncio.run(execute(target, "SELECT id FROM contact_merges"))) == 0
+        asyncio.run(execute(target, f"""
+            INSERT INTO contact_merges (id, workspace_id, request_key, request_digest, source_id, target_id, actor_id, actor_name, snapshot, source_fields)
+            SELECT '{uuid4()}', workspace_id, '{uuid4()}', repeat('a',64), '{uuid4()}', '{chosen_contact_id}', user_id,
+                'Historical contact merger', '{{"source":{{"first_name":"Retained"}}}}'::jsonb, '[]'::jsonb
+            FROM workspace_members LIMIT 1;
+        """))
+        command("alembic", "downgrade", "0026")
+        assert len(asyncio.run(execute(target, f"SELECT id FROM contacts WHERE id = '{chosen_contact_id}'"))) == 1
+        command("alembic", "upgrade", "head")
+        assert len(asyncio.run(execute(target, "SELECT id FROM contact_merges"))) == 0
+        assert len(asyncio.run(execute(target, "SELECT id FROM client_merges"))) == 0
+        asyncio.run(execute(target, f"""
+            INSERT INTO client_merges (id, workspace_id, request_key, request_digest, source_id, target_id, actor_id, actor_name, snapshot, source_fields)
+            SELECT '{uuid4()}', workspace_id, '{uuid4()}', repeat('a',64), '{uuid4()}', '{client_id}', user_id,
+                'Historical merger', '{{"source":{{"name":"Retained source"}}}}'::jsonb, '[]'::jsonb
+            FROM workspace_members LIMIT 1;
+        """))
+        command("alembic", "downgrade", "0025")
+        assert len(asyncio.run(execute(target, f"SELECT id FROM clients WHERE id = '{client_id}'"))) == 1
+        assert len(asyncio.run(execute(target, f"SELECT id FROM deals WHERE id = '{deal_id}'"))) == 1
+        command("alembic", "upgrade", "head")
+        assert len(asyncio.run(execute(target, "SELECT id FROM client_merges"))) == 0
         assert len(asyncio.run(execute(target, "SELECT id FROM deal_audit"))) == 0
         asyncio.run(execute(target, f"""
             INSERT INTO deal_audit (id, workspace_id, deal_id, actor_id, actor_kind, actor_name, action, fields)

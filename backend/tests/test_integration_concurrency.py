@@ -14,7 +14,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.api.v1.integrations import TokenCreate, create_token, incoming_lead, lead_token
+from app.api.v1.integrations import TokenCreate, create_token, incoming_lead, lead_token, website_lead
 from app.core.config import settings
 from app.core.security import hash_password
 from app.models import Client, Deal, Pipeline, PipelineStage, User, Workspace, WorkspaceMember
@@ -22,7 +22,8 @@ from app.models.integrations import IncomingLead, IntegrationToken
 
 
 @pytest.mark.asyncio
-async def test_concurrent_lead_retries_and_quota_use_independent_transactions(monkeypatch):
+@pytest.mark.parametrize('kind', ['legacy', 'website'])
+async def test_concurrent_lead_retries_and_quota_use_independent_transactions(monkeypatch, kind):
     url = os.getenv('TEST_DATABASE_URL')
     if not url:
         pytest.skip('Requires disposable PostgreSQL')
@@ -52,7 +53,10 @@ async def test_concurrent_lead_retries_and_quota_use_independent_transactions(mo
             secret, token_id = issued.token, issued.id
 
         async def intake(key):
-            body = json.dumps({'request_key': str(key), 'title': 'Concurrent lead', 'company_name': 'Company', 'contact_first_name': 'Person'}).encode()
+            values = ({'request_key': str(key), 'title': 'Concurrent lead', 'company_name': 'Company', 'contact_first_name': 'Person'}
+                if kind == 'legacy' else {'request_key': str(key), 'form_kind': 'contact', 'name': 'Person', 'contact': '@person',
+                    'source_url': 'https://itgsystem.ru/contacts', 'submitted_at': '2026-10-26T09:00:00Z', 'privacy_consent': True})
+            body = json.dumps(values).encode()
             async def receive():
                 return {'type': 'http.request', 'body': body, 'more_body': False}
             request = Request({'type': 'http', 'method': 'POST', 'path': '/api/v1/integrations/leads',
@@ -60,7 +64,7 @@ async def test_concurrent_lead_retries_and_quota_use_independent_transactions(mo
             async with sessions() as db:
                 try:
                     token = await lead_token(HTTPAuthorizationCredentials(scheme='Bearer', credentials=secret), db)
-                    result = await incoming_lead(request, Response(), token, db)
+                    result = await (incoming_lead if kind == 'legacy' else website_lead)(request, Response(), token, db)
                     return result.deal_id
                 except HTTPException as error:
                     return error.status_code
@@ -73,6 +77,8 @@ async def test_concurrent_lead_retries_and_quota_use_independent_transactions(mo
             assert await db.scalar(select(func.count()).select_from(Client)) == 1
             assert await db.scalar(select(func.count()).select_from(IncomingLead)) == 1
             assert (await db.get(IntegrationToken, token_id)).hour_count == 1
+            receipt = await db.scalar(select(IncomingLead))
+            assert (receipt.website_context is not None) == (kind == 'website')
         competing = await asyncio.gather(intake(uuid4()), intake(uuid4()))
         assert sum(result == 429 for result in competing) == 1
         async with sessions() as db:

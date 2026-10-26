@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -42,6 +42,7 @@ class IncomingLead(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
     request_key: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     request_digest: Mapped[str] = mapped_column(String(64))
+    website_context: Mapped[dict | None] = mapped_column(JSONB)
     token_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("integration_tokens.id", ondelete="SET NULL", name="fk_incoming_leads_token"))
     client_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL", name="fk_incoming_leads_client"))
     deal_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("deals.id", ondelete="SET NULL", name="fk_incoming_leads_deal"))

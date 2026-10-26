@@ -62,3 +62,13 @@ it('preserves a failed company draft and creates it after retry', async () => {
   fireEvent.click(within(dialog).getByRole('button', {name: 'Сохранить компанию'}));
   expect(await within(dialog).findByRole('button', {name: 'Новая компания клиента'})).toBeTruthy();
 });
+
+it('labels a website visitor as a person instead of implying a legal company', async () => {
+  rows = [{...rows[0], type: 'PERSON', name: 'Посетитель сайта'}];
+  render(<Clients onOpenDeal={vi.fn()} initialWorkspaceId="w1" initialTarget={{kind: 'client', id: 'c1'}}/>);
+  const dialog = await screen.findByRole('dialog', {name: 'Компании'});
+  expect((within(dialog).getByLabelText('Имя клиента') as HTMLInputElement).value).toBe('Посетитель сайта');
+  expect(within(dialog).queryByLabelText('Название компании')).toBeNull();
+  expect(within(dialog).getByRole('button', {name: 'Сохранить клиента'})).toBeTruthy();
+  expect(within(dialog).getByText(/Имя заявителя не является названием юридической компании/)).toBeTruthy();
+});

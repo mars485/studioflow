@@ -1,6 +1,7 @@
 import {useEffect, useState, type FormEvent} from 'react';
 import {X} from 'lucide-react';
 import {type Client, type Contact, type Deal, contactName, errorText, money, request} from './api';
+import ClientMergeHistory from './ClientMergeHistory';
 
 type Draft = {name: string; phone: string; email: string; website: string; notes: string};
 const empty: Draft = {name: '', phone: '', email: '', website: '', notes: ''};
@@ -10,6 +11,7 @@ function ClientEditor({client, clients, contacts, base, canDelete, onChanged, on
   onChanged: (selectedId?: string) => Promise<void>; onOpenDeal: (id: string) => void;
   onOpenContact: (id?: string, clientId?: string) => void;
 }) {
+  const person = client?.type === 'PERSON';
   const [draft, setDraft] = useState<Draft>(client ? {
     name: client.name, phone: client.phone || '', email: client.email || '',
     website: client.website || '', notes: client.notes || '',
@@ -44,32 +46,34 @@ function ClientEditor({client, clients, contacts, base, canDelete, onChanged, on
     finally {setBusy(false);}
   };
   const remove = async () => {
-    if (!client || busy || !window.confirm(`Удалить компанию «${client.name}»?`)) return;
+    if (!client || busy || !window.confirm(`Удалить ${person ? 'клиента' : 'компанию'} «${client.name}»?`)) return;
     setBusy(true); setError('');
     try {await request(`${base}/clients/${client.id}`, 'DELETE'); await onChanged();}
     catch(e) {setError(errorText(e));} finally {setBusy(false);}
   };
   const duplicate = !client && clients.find(row => row.name.trim().toLocaleLowerCase() === draft.name.trim().toLocaleLowerCase());
   return <div className="clientEditor"><h3>{client ? client.name : 'Новая компания'}</h3>
+    {person && <p className="muted">Частное лицо. Имя заявителя не является названием юридической компании.</p>}
     {duplicate && <p className="clientDuplicate">Компания с таким названием уже есть: {duplicate.name}. Выберите её в списке, если это тот же клиент.</p>}
     <form onSubmit={e => void save(e)}><fieldset disabled={busy}>
-      <label>Название компании<input required maxLength={255} value={draft.name} onChange={e => set('name', e.target.value)}/></label>
+      <label>{person ? 'Имя клиента' : 'Название компании'}<input required maxLength={255} value={draft.name} onChange={e => set('name', e.target.value)}/></label>
       <label>Рабочий телефон<input maxLength={50} value={draft.phone} onChange={e => set('phone', e.target.value)}/></label>
       <label>Рабочий email<input type="email" value={draft.email} onChange={e => set('email', e.target.value)}/></label>
       <label>Сайт<input maxLength={255} value={draft.website} onChange={e => set('website', e.target.value)}/></label>
       <label>Описание<textarea maxLength={10000} value={draft.notes} onChange={e => set('notes', e.target.value)}/></label>
       {error && <p role="alert" className="errorMessage">{error}</p>}
-      <div className="clientActions"><button className="saveFollow" disabled={!draft.name.trim()}>{busy ? 'Сохранение…' : 'Сохранить компанию'}</button>
-        {client && canDelete && <button type="button" className="noteBtn" onClick={() => void remove()}>Удалить компанию</button>}</div>
+      <div className="clientActions"><button className="saveFollow" disabled={!draft.name.trim()}>{busy ? 'Сохранение…' : person ? 'Сохранить клиента' : 'Сохранить компанию'}</button>
+        {client && canDelete && <button type="button" className="noteBtn" onClick={() => void remove()}>{person ? 'Удалить клиента' : 'Удалить компанию'}</button>}</div>
     </fieldset></form>
-    {client && <section className="clientDeals"><h3>Контакты компании</h3>
+    {client && <section className="clientDeals"><h3>{person ? 'Контактные лица' : 'Контакты компании'}</h3>
       <ul>{contacts.filter(row => row.client_ids.includes(client.id)).map(row => <li key={row.id}><button type="button" onClick={() => onOpenContact(row.id)}>{contactName(row)}</button></li>)}</ul>
       <button type="button" className="noteBtn" onClick={() => onOpenContact(undefined, client.id)}>Добавить контакт</button>
     </section>}
-    {client && <section className="clientDeals"><h3>Сделки компании</h3>
+    {client && <section className="clientDeals"><h3>{person ? 'Сделки клиента' : 'Сделки компании'}</h3>
       {loading ? <p role="status">Загрузка сделок…</p> : dealError ? <p role="alert">{dealError} <button type="button" onClick={() => setReload(n => n + 1)}>Повторить</button></p> :
         deals.length ? <ul>{deals.map(deal => <li key={deal.id}><button type="button" onClick={() => onOpenDeal(deal.id)}>{deal.title}</button><span>{money(deal.amount, deal.currency)}</span></li>)}</ul> : <p className="muted">Сделок пока нет.</p>}
     </section>}
+    {client && canDelete && <ClientMergeHistory base={base} targetId={client.id}/>}
   </div>;
 }
 

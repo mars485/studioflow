@@ -10,6 +10,9 @@
 @import './MyDay.css' layer(legacy);
 @import './DealDetails.css' layer(legacy);
 @import './CsvExport.css' layer(legacy);
+@import './CompanyMerge.css' layer(legacy);
+@import './EmployeeGroups.css' layer(legacy);
+@import './WebsiteLeadContext.css' layer(legacy);
 @import './TaskCalendar.css' layer(legacy);
 @import './ProjectWorkPlan.css' layer(legacy);
 @import './HomeDashboard.css' layer(legacy);

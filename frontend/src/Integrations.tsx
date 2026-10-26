@@ -1,10 +1,12 @@
 import {useEffect, useRef, useState, type FormEvent} from 'react';
 import {errorText, request, type Pipeline, type Workspace} from './api';
 import Webhooks from './Webhooks';
+import WebsiteLeadContext, {type WebsiteContext} from './WebsiteLeadContext';
 
 type Token = {id: string; name: string; hint: string; pipeline_id: string | null; expires_at: string; revoked_at: string | null;
   created_at: string; last_used_at: string | null; scope: 'leads:create'};
-type Receipt = {id: string; request_key: string; client_id: string | null; deal_id: string | null; created_at: string; deal_title: string | null};
+type Receipt = {id: string; request_key: string; client_id: string | null; deal_id: string | null; created_at: string; deal_title: string | null;
+  website_context?: WebsiteContext | null};
 
 function WorkspaceIntegrations({workspaceId, onOpenDeal}: {workspaceId: string; onOpenDeal: (workspaceId: string, dealId: string) => void}) {
   const base = `/workspaces/${workspaceId}`;
@@ -74,7 +76,8 @@ function WorkspaceIntegrations({workspaceId, onOpenDeal}: {workspaceId: string; 
       <section className="card settingsCard"><h2>Журнал принятых заявок</h2>
         {!leads.length ? <p className="muted">Принятых заявок пока нет.</p> : <ol className="activityList">{leads.map(row => <li key={row.id}>
           <time dateTime={row.created_at}>{new Date(row.created_at).toLocaleString('ru-RU')}</time><p>Ключ: {row.request_key}</p>
-          {row.deal_id ? <button onClick={() => onOpenDeal(workspaceId, row.deal_id!)}>Открыть заявку {row.deal_title || row.deal_id}</button> : <p>Сделка удалена; повтор заявки её не восстановит.</p>}
+           {row.deal_id ? <button onClick={() => onOpenDeal(workspaceId, row.deal_id!)}>Открыть заявку {row.deal_title || row.deal_id}</button> : <p>Сделка удалена; повтор заявки её не восстановит.</p>}
+           {row.website_context && <WebsiteLeadContext context={row.website_context}/>}
         </li>)}</ol>}
         <div className="inlineForm"><button disabled={busy || !leadOffset} onClick={() => setLeadOffset(n => Math.max(0, n - 50))}>Предыдущие заявки</button>
           <button disabled={busy || leads.length < 50} onClick={() => setLeadOffset(n => n + 50)}>Следующие заявки</button></div>
@@ -86,6 +89,12 @@ function WorkspaceIntegrations({workspaceId, onOpenDeal}: {workspaceId: string; 
       <p><code>POST /api/v1/integrations/leads</code> · <code>Authorization: Bearer &lt;TOKEN&gt;</code> · <code>X-StudioFlow-Request: 1</code> · <code>Content-Type: application/json</code></p>
       <pre style={{whiteSpace: 'pre-wrap'}}>{JSON.stringify({request_key: '<UUID одной заявки; сохраняйте для повторов>', title: 'Заявка с сайта', company_name: 'Компания', contact_first_name: 'Имя', email: 'client@example.com', message: 'Описание', source: 'ITG website'}, null, 2)}</pre>
       <p className="muted">Тело до 64 КиБ. Уникальный UUID на новую заявку, тот же UUID при сетевом повторе. Без CORS; требуется серверный обработчик сайта. Для публичного подключения обязательны HTTPS и ограничения reverse proxy.</p>
+    </section>
+    <section className="card settingsCard" aria-label="Заявки MODX через n8n"><h2>Заявки MODX через n8n</h2>
+      <p><code>POST /api/v1/integrations/website-leads</code> использует отдельный контракт формы: контактная строка, сайт, источник, время, UTM и заявленные согласия. Для аудита обязательны сайт, email и согласие на запрошенный аудит.</p>
+      <p>Без названия компании создаётся клиент «Частное лицо» с именем заявителя. Telegram не записывается как телефон. Нужны тот же серверный токен StudioFlow и сохранённый UUID одной заявки для повторов.</p>
+      <a href="/integration-templates/itg-website-intake.draft.json" download>Скачать черновик n8n (неактивный)</a>
+      <p className="muted">Черновик без секретов и с адресом-заглушкой .invalid. Перед импортом нужны отдельные Credentials, согласованный HTTPS-адрес StudioFlow и тестовый контур. Текущие формы и workflow не переключаются автоматически.</p>
     </section>
   </>;
 }
